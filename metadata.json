@@ -1,0 +1,14 @@
+{
+  "name": "NutriTrack AI",
+  "description": "A modern health and fitness tracker with AI-powered food recognition, calorie tracking, workout logging, and hydration monitoring.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "AI Food Recognition",
+    "Calorie & Macro Tracking",
+    "Workout Logging",
+    "Water Intake Tracking",
+    "Progress Visualization"
+  ]
+}

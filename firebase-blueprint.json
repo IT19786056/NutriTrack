@@ -1,0 +1,95 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User settings and daily goals",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "dailyCalorieGoal": { "type": "number" },
+        "dailyWaterGoal": { "type": "number" },
+        "weight": { "type": "number" },
+        "height": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "FoodLog": {
+      "title": "Food Log Entry",
+      "description": "A single food item consumed by the user",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "calories": { "type": "number" },
+        "protein": { "type": "number" },
+        "carbs": { "type": "number" },
+        "fats": { "type": "number" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "imageUrl": { "type": "string" },
+        "mealType": { "type": "string", "enum": ["breakfast", "lunch", "dinner", "snack"] }
+      },
+      "required": ["uid", "name", "calories", "timestamp"]
+    },
+    "WorkoutLog": {
+      "title": "Workout Log Entry",
+      "description": "A workout session logged by the user",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "exercise": { "type": "string" },
+        "duration": { "type": "number" },
+        "caloriesBurned": { "type": "number" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "exercise", "caloriesBurned", "timestamp"]
+    },
+    "WaterLog": {
+      "title": "Water Log Entry",
+      "description": "Water intake record",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "amount": { "type": "number" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "amount", "timestamp"]
+    },
+    "Invitation": {
+      "title": "User Invitation",
+      "description": "Whitelisted emails for app access",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "accepted"] },
+        "invitedAt": { "type": "string", "format": "date-time" },
+        "invitedBy": { "type": "string" }
+      },
+      "required": ["email", "status"]
+    }
+  },
+  "firestore": {
+    "/invitations/{email}": {
+      "schema": "Invitation",
+      "description": "Access control whitelist"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile and goals"
+    },
+    "/users/{userId}/foodLogs/{logId}": {
+      "schema": "FoodLog",
+      "description": "User's food consumption history"
+    },
+    "/users/{userId}/workoutLogs/{logId}": {
+      "schema": "WorkoutLog",
+      "description": "User's workout history"
+    },
+    "/users/{userId}/waterLogs/{logId}": {
+      "schema": "WaterLog",
+      "description": "User's water intake history"
+    }
+  }
+}

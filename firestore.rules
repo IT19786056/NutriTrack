@@ -1,0 +1,163 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: /users/{userId}
+// Fields:
+//   - uid: string (required)
+//   - displayName: string
+//   - email: string (required)
+//   - dailyCalorieGoal: number
+//   - dailyWaterGoal: number
+//   - weight: number
+//   - height: number
+//   - createdAt: string (ISO 8601)
+//
+// Collection: /users/{userId}/foodLogs/{logId}
+// Fields:
+//   - uid: string (required)
+//   - name: string (required)
+//   - calories: number (required)
+//   - protein: number
+//   - carbs: number
+//   - fats: number
+//   - timestamp: string (ISO 8601, required)
+//   - imageUrl: string
+//   - mealType: string (breakfast, lunch, dinner, snack)
+//
+// Collection: /users/{userId}/workoutLogs/{logId}
+// Fields:
+//   - uid: string (required)
+//   - exercise: string (required)
+//   - duration: number
+//   - caloriesBurned: number (required)
+//   - timestamp: string (ISO 8601, required)
+//
+// Collection: /users/{userId}/waterLogs/{logId}
+// Fields:
+//   - uid: string (required)
+//   - amount: number (required)
+//   - timestamp: string (ISO 8601, required)
+//
+// ===============================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (
+          request.auth.token.email == "ravindijason@gmail.com" ||
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+        );
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    function hasOnlyAllowedFields(data, allowedFields) {
+      return data.keys().hasOnly(allowedFields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.uid == request.auth.uid &&
+             isValidEmail(data.email) &&
+             (!('dailyCalorieGoal' in data) || data.dailyCalorieGoal is number) &&
+             (!('dailyWaterGoal' in data) || data.dailyWaterGoal is number) &&
+             (!('createdAt' in data) || isValidDateString(data.createdAt));
+    }
+
+    function isValidFoodLog(data) {
+      return data.uid == request.auth.uid &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
+             data.calories is number && data.calories >= 0 &&
+             isValidDateString(data.timestamp);
+    }
+
+    function isValidWorkoutLog(data) {
+      return data.uid == request.auth.uid &&
+             data.exercise is string && data.exercise.size() > 0 && data.exercise.size() < 200 &&
+             data.caloriesBurned is number && data.caloriesBurned >= 0 &&
+             isValidDateString(data.timestamp);
+    }
+
+    function isValidWaterLog(data) {
+      return data.uid == request.auth.uid &&
+             data.amount is number && data.amount > 0 &&
+             isValidDateString(data.timestamp);
+    }
+
+    function isValidInvitation(data) {
+      return isValidEmail(data.email) &&
+             data.status in ['pending', 'accepted'];
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /invitations/{email} {
+      allow get: if isAuthenticated() && (request.auth.token.email.lower() == email.lower() || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isAdmin();
+      allow update: if isAdmin() || (isAuthenticated() && request.auth.token.email.lower() == email.lower() && request.resource.data.status == 'accepted');
+      allow delete: if isAdmin();
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data);
+      allow delete: if isAdmin();
+
+      match /foodLogs/{logId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidFoodLog(request.resource.data);
+        allow update: if isOwner(userId) && isValidFoodLog(request.resource.data);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /workoutLogs/{logId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidWorkoutLog(request.resource.data);
+        allow update: if isOwner(userId) && isValidWorkoutLog(request.resource.data);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /waterLogs/{logId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidWaterLog(request.resource.data);
+        allow update: if isOwner(userId) && isValidWaterLog(request.resource.data);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
