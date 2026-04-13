@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Dumbbell, Clock, Flame, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { handleFirestoreError, OperationType } from '@/src/lib/firestore-errors';
 
 export const WorkoutTracker: React.FC = () => {
   const { user } = useAuth();
@@ -22,8 +23,9 @@ export const WorkoutTracker: React.FC = () => {
   const saveWorkout = async () => {
     if (!user || !workout.exercise || !workout.caloriesBurned) return;
 
+    const path = `users/${user.uid}/workoutLogs`;
     try {
-      await addDoc(collection(db, `users/${user.uid}/workoutLogs`), {
+      await addDoc(collection(db, path), {
         uid: user.uid,
         exercise: workout.exercise,
         duration: Number(workout.duration || 0),
@@ -34,7 +36,7 @@ export const WorkoutTracker: React.FC = () => {
       setIsOpen(false);
       setWorkout({ exercise: '', duration: '', caloriesBurned: '' });
     } catch (error) {
-      toast.error('Failed to log workout.');
+      handleFirestoreError(error, OperationType.CREATE, path);
     }
   };
 

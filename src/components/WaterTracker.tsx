@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Droplets, Plus, GlassWater } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'motion/react';
+import { handleFirestoreError, OperationType } from '@/src/lib/firestore-errors';
 
 export const WaterTracker: React.FC = () => {
   const { user, profile } = useAuth();
@@ -15,15 +16,16 @@ export const WaterTracker: React.FC = () => {
   const addWater = async (amount: number) => {
     if (!user) return;
     setIsAdding(true);
+    const path = `users/${user.uid}/waterLogs`;
     try {
-      await addDoc(collection(db, `users/${user.uid}/waterLogs`), {
+      await addDoc(collection(db, path), {
         uid: user.uid,
         amount,
         timestamp: new Date().toISOString()
       });
       toast.success(`Logged ${amount}ml of water!`);
     } catch (error) {
-      toast.error('Failed to log water.');
+      handleFirestoreError(error, OperationType.CREATE, path);
     } finally {
       setIsAdding(false);
     }

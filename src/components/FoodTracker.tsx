@@ -11,6 +11,7 @@ import { Camera, Upload, Loader2, Plus, Utensils, Info, Sparkles } from 'lucide-
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { handleFirestoreError, OperationType } from '@/src/lib/firestore-errors';
 
 export const FoodTracker: React.FC = () => {
   const { user } = useAuth();
@@ -84,8 +85,9 @@ export const FoodTracker: React.FC = () => {
   const saveFoodLog = async (food: any) => {
     if (!user) return;
     
+    const path = `users/${user.uid}/foodLogs`;
     try {
-      await addDoc(collection(db, `users/${user.uid}/foodLogs`), {
+      await addDoc(collection(db, path), {
         uid: user.uid,
         name: food.name,
         calories: Number(food.calories),
@@ -103,8 +105,7 @@ export const FoodTracker: React.FC = () => {
       setCapturedImage(null);
       setManualFood({ name: '', calories: '', protein: '', carbs: '', fats: '', mealType: 'lunch' });
     } catch (error) {
-      console.error('Failed to save log:', error);
-      toast.error('Failed to save food log.');
+      handleFirestoreError(error, OperationType.CREATE, path);
     }
   };
 

@@ -94,6 +94,9 @@ service cloud.firestore {
       return data.uid == request.auth.uid &&
              data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
              data.calories is number && data.calories >= 0 &&
+             (!('protein' in data) || data.protein is number) &&
+             (!('carbs' in data) || data.carbs is number) &&
+             (!('fats' in data) || data.fats is number) &&
              isValidDateString(data.timestamp);
     }
 
