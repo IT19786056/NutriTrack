@@ -1,33 +1,28 @@
-import express from "express";
-import { createServer as createViteServer } from "vite";
-import path from "path";
-import nodemailer from "nodemailer";
-import dotenv from "dotenv";
+import { VercelRequest, VercelResponse } from '@vercel/node';
+import nodemailer from 'nodemailer';
 
-dotenv.config();
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
 
-const app = express();
-app.use(express.json());
-
-// API Route for sending invitations
-app.post("/api/invite", async (req, res) => {
   const { email, invitedBy } = req.body;
 
   if (!email) {
-    return res.status(400).json({ error: "Email is required" });
+    return res.status(400).json({ error: 'Email is required' });
   }
 
   const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: Number(process.env.SMTP_PORT) || 587,
-    secure: process.env.SMTP_PORT === "465",
+    secure: process.env.SMTP_PORT === '465',
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
   });
 
-  const inviteLink = `${process.env.APP_URL || "http://localhost:3000"}`;
+  const inviteLink = `${process.env.APP_URL || 'http://localhost:3000'}`;
 
   try {
     await transporter.sendMail({
@@ -48,36 +43,9 @@ app.post("/api/invite", async (req, res) => {
       `,
     });
 
-    res.json({ success: true });
+    return res.status(200).json({ success: true });
   } catch (error) {
-    console.error("SMTP Error:", error);
-    res.status(500).json({ error: "Failed to send email. Check SMTP configuration." });
-  }
-});
-
-async function setupVite() {
-  if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
+    console.error('SMTP Error:', error);
+    return res.status(500).json({ error: 'Failed to send email. Check SMTP configuration.' });
   }
 }
-
-if (process.env.NODE_ENV !== "production" || !process.env.VERCEL) {
-  setupVite().then(() => {
-    const PORT = 3000;
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`Server running on http://localhost:${PORT}`);
-    });
-  });
-}
-
-export default app;
