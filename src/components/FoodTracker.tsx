@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { handleFirestoreError, OperationType } from '@/src/lib/firestore-errors';
+import { resizeImage } from '@/src/lib/image-utils';
 
 export const FoodTracker: React.FC = () => {
   const { user } = useAuth();
@@ -64,12 +65,15 @@ export const FoodTracker: React.FC = () => {
 
     const reader = new FileReader();
     reader.onloadend = async () => {
-      const base64String = (reader.result as string).split(',')[1];
-      setCapturedImage(reader.result as string);
       setIsAnalyzing(true);
-      
       try {
-        const result = await analyzeFoodImage(base64String);
+        // Resize image to keep it under Firestore/Gemini limits
+        const resized = await resizeImage(reader.result as string);
+        const base64Data = resized.split(',')[1];
+        
+        setCapturedImage(resized);
+        
+        const result = await analyzeFoodImage(base64Data);
         setAiResult(result);
         setIsAiResultOpen(true);
       } catch (error) {
@@ -87,6 +91,14 @@ export const FoodTracker: React.FC = () => {
     
     const path = `users/${user.uid}/foodLogs`;
     try {
+      if (capturedImage) {
+        const sizeInBytes = Math.round((capturedImage.length * 3) / 4);
+        console.log(`Saving food log with image. Size: ${(sizeInBytes / 1024).toFixed(2)} KB`);
+        if (sizeInBytes > 1000000) {
+          throw new Error('Image is too large to save (max 1MB). Please try a smaller photo.');
+        }
+      }
+
       await addDoc(collection(db, path), {
         uid: user.uid,
         name: food.name,
