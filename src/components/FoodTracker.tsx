@@ -1,27 +1,30 @@
-import React, { useState, useRef } from 'react';
-import { collection, addDoc } from 'firebase/firestore';
+import React, { useState, useRef, useEffect } from 'react';
+import { collection, addDoc, query, onSnapshot, orderBy, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '@/src/lib/firebase';
 import { useAuth } from '@/src/lib/AuthContext';
-import { analyzeFoodImage, getNutritionByName, NutritionalInfo } from '@/src/lib/gemini';
+import { analyzeFoodImage, getNutritionByName, NutritionalInfo, recalculateNutrition } from '@/src/lib/gemini';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Camera, Upload, Loader2, Plus, Utensils, Info, Sparkles } from 'lucide-react';
+import { Camera, Upload, Loader2, Plus, Utensils, Info, Sparkles, Trash2, History, X, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { handleFirestoreError, OperationType } from '@/src/lib/firestore-errors';
 import { resizeImage } from '@/src/lib/image-utils';
+import { FoodLog } from '@/src/types';
 
 export const FoodTracker: React.FC = () => {
   const { user } = useAuth();
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isFetchingNutrition, setIsFetchingNutrition] = useState(false);
+  const [isRecalculating, setIsRecalculating] = useState(false);
   const [isManualOpen, setIsManualOpen] = useState(false);
   const [isAiResultOpen, setIsAiResultOpen] = useState(false);
   const [aiResult, setAiResult] = useState<NutritionalInfo | null>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [foodLogs, setFoodLogs] = useState<FoodLog[]>([]);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -31,8 +34,28 @@ export const FoodTracker: React.FC = () => {
     protein: '',
     carbs: '',
     fats: '',
-    mealType: 'lunch' as const
+    mealType: 'lunch' as const,
+    ingredients: [] as string[]
   });
+
+  const [newIngredient, setNewIngredient] = useState('');
+
+  useEffect(() => {
+    if (!user) return;
+
+    const q = query(
+      collection(db, `users/${user.uid}/foodLogs`),
+      orderBy('timestamp', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setFoodLogs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as FoodLog)));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/foodLogs`);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
 
   const fetchNutrition = async () => {
     if (!manualFood.name) {
@@ -49,6 +72,7 @@ export const FoodTracker: React.FC = () => {
         protein: result.protein.toString(),
         carbs: result.carbs.toString(),
         fats: result.fats.toString(),
+        ingredients: result.ingredients || []
       });
       toast.success(`Found nutritional facts for ${manualFood.name}`);
     } catch (error) {
@@ -56,6 +80,44 @@ export const FoodTracker: React.FC = () => {
       toast.error('Could not find nutritional facts. Please enter manually.');
     } finally {
       setIsFetchingNutrition(false);
+    }
+  };
+
+  const handleRecalculate = async (isAi: boolean) => {
+    const currentFood = isAi ? aiResult : manualFood;
+    if (!currentFood || !currentFood.ingredients || currentFood.ingredients.length === 0) {
+      toast.error('Add ingredients to recalculate');
+      return;
+    }
+
+    setIsRecalculating(true);
+    try {
+      const result = await recalculateNutrition(currentFood.ingredients, currentFood.name);
+      if (isAi && aiResult) {
+        setAiResult({
+          ...aiResult,
+          calories: result.calories,
+          protein: result.protein,
+          carbs: result.carbs,
+          fats: result.fats,
+          ingredients: result.ingredients
+        });
+      } else {
+        setManualFood({
+          ...manualFood,
+          calories: result.calories.toString(),
+          protein: result.protein.toString(),
+          carbs: result.carbs.toString(),
+          fats: result.fats.toString(),
+          ingredients: result.ingredients
+        });
+      }
+      toast.success('Nutrition updated based on ingredients');
+    } catch (error) {
+      console.error('Recalculation failed:', error);
+      toast.error('Failed to recalculate nutrition');
+    } finally {
+      setIsRecalculating(false);
     }
   };
 
@@ -108,16 +170,50 @@ export const FoodTracker: React.FC = () => {
         fats: Number(food.fats || 0),
         mealType: food.mealType || 'snack',
         timestamp: new Date().toISOString(),
-        imageUrl: capturedImage || null
+        imageUrl: capturedImage || null,
+        ingredients: food.ingredients || []
       });
       toast.success(`${food.name} logged successfully!`);
       setIsManualOpen(false);
       setIsAiResultOpen(false);
       setAiResult(null);
       setCapturedImage(null);
-      setManualFood({ name: '', calories: '', protein: '', carbs: '', fats: '', mealType: 'lunch' });
+      setManualFood({ name: '', calories: '', protein: '', carbs: '', fats: '', mealType: 'lunch', ingredients: [] });
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, path);
+    }
+  };
+
+  const deleteLog = async (id: string) => {
+    if (!user || !id) return;
+    const path = `users/${user.uid}/foodLogs/${id}`;
+    try {
+      await deleteDoc(doc(db, path));
+      toast.success('Log deleted');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    }
+  };
+
+  const addIngredient = (isAi: boolean) => {
+    if (!newIngredient.trim()) return;
+    if (isAi && aiResult) {
+      setAiResult({ ...aiResult, ingredients: [...aiResult.ingredients, newIngredient.trim()] });
+    } else {
+      setManualFood({ ...manualFood, ingredients: [...manualFood.ingredients, newIngredient.trim()] });
+    }
+    setNewIngredient('');
+  };
+
+  const removeIngredient = (isAi: boolean, index: number) => {
+    if (isAi && aiResult) {
+      const newIngs = [...aiResult.ingredients];
+      newIngs.splice(index, 1);
+      setAiResult({ ...aiResult, ingredients: newIngs });
+    } else {
+      const newIngs = [...manualFood.ingredients];
+      newIngs.splice(index, 1);
+      setManualFood({ ...manualFood, ingredients: newIngs });
     }
   };
 
@@ -184,9 +280,55 @@ export const FoodTracker: React.FC = () => {
         </Card>
       </div>
 
+      {/* Recent Logs List */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <History className="w-5 h-5" />
+            Recent Logs
+          </CardTitle>
+          <CardDescription>Your recently logged meals and snacks.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {foodLogs.length === 0 ? (
+              <p className="text-center text-muted-foreground py-4">No logs yet today.</p>
+            ) : (
+              foodLogs.map((log) => (
+                <div key={log.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border group">
+                  <div className="flex items-center gap-3">
+                    {log.imageUrl ? (
+                      <img src={log.imageUrl} alt={log.name} className="w-12 h-12 rounded-md object-cover" referrerPolicy="no-referrer" />
+                    ) : (
+                      <div className="w-12 h-12 rounded-md bg-muted flex items-center justify-center">
+                        <Utensils className="w-6 h-6 text-muted-foreground" />
+                      </div>
+                    )}
+                    <div>
+                      <h4 className="font-medium">{log.name}</h4>
+                      <p className="text-xs text-muted-foreground">
+                        {log.mealType.charAt(0).toUpperCase() + log.mealType.slice(1)} • {log.calories} kcal
+                      </p>
+                    </div>
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive hover:bg-destructive/10 transition-opacity"
+                    onClick={() => log.id && deleteLog(log.id)}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* AI Result Dialog */}
       <Dialog open={isAiResultOpen} onOpenChange={setIsAiResultOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>AI Analysis Result</DialogTitle>
             <DialogDescription>
@@ -194,32 +336,17 @@ export const FoodTracker: React.FC = () => {
             </DialogDescription>
           </DialogHeader>
           {aiResult && (
-            <div className="space-y-4 py-4">
+            <div className="space-y-6 py-4">
               {capturedImage && (
                 <div className="relative aspect-video rounded-lg overflow-hidden border">
                   <img src={capturedImage} alt="Captured food" className="object-cover w-full h-full" referrerPolicy="no-referrer" />
                 </div>
               )}
+              
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <Label className="text-xs text-muted-foreground">Food Item</Label>
                   <Input value={aiResult.name} onChange={(e) => setAiResult({...aiResult, name: e.target.value})} />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Calories (kcal)</Label>
-                  <Input type="number" value={aiResult.calories} onChange={(e) => setAiResult({...aiResult, calories: Number(e.target.value)})} />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Protein (g)</Label>
-                  <Input type="number" value={aiResult.protein} onChange={(e) => setAiResult({...aiResult, protein: Number(e.target.value)})} />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Carbs (g)</Label>
-                  <Input type="number" value={aiResult.carbs} onChange={(e) => setAiResult({...aiResult, carbs: Number(e.target.value)})} />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Fats (g)</Label>
-                  <Input type="number" value={aiResult.fats} onChange={(e) => setAiResult({...aiResult, fats: Number(e.target.value)})} />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs text-muted-foreground">Meal Type</Label>
@@ -236,9 +363,68 @@ export const FoodTracker: React.FC = () => {
                   </Select>
                 </div>
               </div>
+
+              {/* Ingredients Section */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-bold">Ingredients</Label>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="h-7 text-xs gap-1"
+                    onClick={() => handleRecalculate(true)}
+                    disabled={isRecalculating}
+                  >
+                    {isRecalculating ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                    Recalculate Nutrition
+                  </Button>
+                </div>
+                <div className="flex flex-wrap gap-2 p-3 rounded-lg border bg-muted/30">
+                  {aiResult.ingredients.map((ing, idx) => (
+                    <div key={idx} className="flex items-center gap-1 bg-background border rounded-full px-3 py-1 text-xs">
+                      {ing}
+                      <button onClick={() => removeIngredient(true, idx)} className="hover:text-destructive">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-1 w-full mt-2">
+                    <Input 
+                      placeholder="Add ingredient..." 
+                      className="h-8 text-xs" 
+                      value={newIngredient}
+                      onChange={e => setNewIngredient(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && addIngredient(true)}
+                    />
+                    <Button size="sm" className="h-8 px-2" onClick={() => addIngredient(true)}>
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-4 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-[10px] text-muted-foreground">Calories</Label>
+                  <Input type="number" className="h-8" value={aiResult.calories} onChange={(e) => setAiResult({...aiResult, calories: Number(e.target.value)})} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] text-muted-foreground">Protein</Label>
+                  <Input type="number" className="h-8" value={aiResult.protein} onChange={(e) => setAiResult({...aiResult, protein: Number(e.target.value)})} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] text-muted-foreground">Carbs</Label>
+                  <Input type="number" className="h-8" value={aiResult.carbs} onChange={(e) => setAiResult({...aiResult, carbs: Number(e.target.value)})} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] text-muted-foreground">Fats</Label>
+                  <Input type="number" className="h-8" value={aiResult.fats} onChange={(e) => setAiResult({...aiResult, fats: Number(e.target.value)})} />
+                </div>
+              </div>
+
               <div className="flex items-start gap-2 p-3 rounded-lg bg-muted text-[10px] text-muted-foreground">
                 <Info className="w-4 h-4 shrink-0" />
-                <p>These are AI-generated estimates based on the image provided. Please verify for accuracy.</p>
+                <p>Modifying ingredients allows for more accurate nutrition tracking. Click "Recalculate" to update macros based on your changes.</p>
               </div>
             </div>
           )}
@@ -251,14 +437,14 @@ export const FoodTracker: React.FC = () => {
 
       {/* Manual Entry Dialog */}
       <Dialog open={isManualOpen} onOpenChange={setIsManualOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Manual Food Entry</DialogTitle>
             <DialogDescription>
               Enter the nutritional details of your meal.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
+          <div className="grid gap-6 py-4">
             <div className="grid gap-2">
               <Label htmlFor="name">Food Name</Label>
               <div className="flex gap-2">
@@ -275,6 +461,46 @@ export const FoodTracker: React.FC = () => {
                 </Button>
               </div>
             </div>
+
+            {/* Ingredients Section for Manual */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-bold">Ingredients</Label>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="h-7 text-xs gap-1"
+                  onClick={() => handleRecalculate(false)}
+                  disabled={isRecalculating}
+                >
+                  {isRecalculating ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                  Recalculate Nutrition
+                </Button>
+              </div>
+              <div className="flex flex-wrap gap-2 p-3 rounded-lg border bg-muted/30">
+                {manualFood.ingredients.map((ing, idx) => (
+                  <div key={idx} className="flex items-center gap-1 bg-background border rounded-full px-3 py-1 text-xs">
+                    {ing}
+                    <button onClick={() => removeIngredient(false, idx)} className="hover:text-destructive">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+                <div className="flex items-center gap-1 w-full mt-2">
+                  <Input 
+                    placeholder="Add ingredient..." 
+                    className="h-8 text-xs" 
+                    value={newIngredient}
+                    onChange={e => setNewIngredient(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && addIngredient(false)}
+                  />
+                  <Button size="sm" className="h-8 px-2" onClick={() => addIngredient(false)}>
+                    <Plus className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="calories">Calories (kcal)</Label>

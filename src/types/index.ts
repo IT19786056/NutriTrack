@@ -21,6 +21,7 @@ export interface FoodLog {
   timestamp: string;
   imageUrl?: string;
   mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+  ingredients?: string[];
 }
 
 export interface WorkoutLog {
