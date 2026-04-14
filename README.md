@@ -14,7 +14,7 @@ A minimalist, high-performance application for tracking caloric intake, macronut
 
 * **Frontend:** React / React Native (Cross-platform)
 * **Backend:** Node.js / Express
-* **Database:** SQL Server (Managing complex relations between users, meals, and macronutrients)
+* **Database:** FireBase
 * **API:** RESTful architecture
 
 ## Getting Started
