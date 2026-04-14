@@ -56,11 +56,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
           } catch (error) {
             console.error("Auth check error:", error);
-            // Don't throw here to avoid blocking the app, just log
           }
         }
         
         setIsAuthorized(authorized);
+        // Strictly set isAdmin based on primary admin status initially
         setIsAdmin(isPrimaryAdmin);
 
         if (authorized) {
@@ -75,16 +75,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 dailyCalorieGoal: 2000,
                 dailyWaterGoal: 2000,
                 createdAt: new Date().toISOString(),
+                role: 'user' // Explicitly set default role
               };
               await setDoc(userDocRef, newProfile);
               setProfile(newProfile);
             } else {
               const data = userDoc.data() as UserProfile;
               setProfile(data);
-              // If user has admin role in DB, set isAdmin to true
-              if (data.role === 'admin') {
-                setIsAdmin(true);
-              }
+              // Update isAdmin based on DB role, overriding initial state if necessary
+              setIsAdmin(isPrimaryAdmin || data.role === 'admin');
             }
           } catch (error) {
             console.error("Profile fetch error:", error);
@@ -101,6 +100,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribe();
   }, []);
 
+  // Separate effect for real-time invitation updates
+  useEffect(() => {
+    if (!user) return;
+
+    const userEmail = user.email?.toLowerCase();
+    if (!userEmail) return;
+
+    const inviteDocRef = doc(db, 'invitations', userEmail);
+    const unsubInvite = onSnapshot(inviteDocRef, async (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setIsAuthorized(true);
+        if (data.status === 'pending') {
+          await setDoc(inviteDocRef, { status: 'accepted' }, { merge: true });
+        }
+      }
+    }, (error) => {
+      console.error("Invite listener error:", error);
+    });
+
+    return () => unsubInvite();
+  }, [user]);
+
   // Separate effect for real-time profile updates
   useEffect(() => {
     if (!user || !isAuthorized) return;
@@ -110,9 +132,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (doc.exists()) {
         const data = doc.data() as UserProfile;
         setProfile(data);
-        if (data.role === 'admin') {
-          setIsAdmin(true);
-        }
+        const isPrimaryAdmin = user?.email?.toLowerCase() === PRIMARY_ADMIN_EMAIL.toLowerCase();
+        setIsAdmin(isPrimaryAdmin || data.role === 'admin');
       }
     }, (error) => {
       console.error("Profile listener error:", error);

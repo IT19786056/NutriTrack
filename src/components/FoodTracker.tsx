@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { handleFirestoreError, OperationType } from '@/src/lib/firestore-errors';
 import { resizeImage } from '@/src/lib/image-utils';
-import { FoodLog } from '@/src/types';
+import { FoodLog, Ingredient } from '@/src/types';
 
 export const FoodTracker: React.FC = () => {
   const { user } = useAuth();
@@ -35,10 +35,10 @@ export const FoodTracker: React.FC = () => {
     carbs: '',
     fats: '',
     mealType: 'lunch' as const,
-    ingredients: [] as string[]
+    ingredients: [] as Ingredient[]
   });
 
-  const [newIngredient, setNewIngredient] = useState('');
+  const [newIngredient, setNewIngredient] = useState({ name: '', portion: '' });
 
   useEffect(() => {
     if (!user) return;
@@ -196,13 +196,17 @@ export const FoodTracker: React.FC = () => {
   };
 
   const addIngredient = (isAi: boolean) => {
-    if (!newIngredient.trim()) return;
-    if (isAi && aiResult) {
-      setAiResult({ ...aiResult, ingredients: [...aiResult.ingredients, newIngredient.trim()] });
-    } else {
-      setManualFood({ ...manualFood, ingredients: [...manualFood.ingredients, newIngredient.trim()] });
+    if (!newIngredient.name.trim() || !newIngredient.portion.trim()) {
+      toast.error('Enter both name and portion');
+      return;
     }
-    setNewIngredient('');
+    const ingredient: Ingredient = { name: newIngredient.name.trim(), portion: newIngredient.portion.trim() };
+    if (isAi && aiResult) {
+      setAiResult({ ...aiResult, ingredients: [...aiResult.ingredients, ingredient] });
+    } else {
+      setManualFood({ ...manualFood, ingredients: [...manualFood.ingredients, ingredient] });
+    }
+    setNewIngredient({ name: '', portion: '' });
   };
 
   const removeIngredient = (isAi: boolean, index: number) => {
@@ -213,6 +217,18 @@ export const FoodTracker: React.FC = () => {
     } else {
       const newIngs = [...manualFood.ingredients];
       newIngs.splice(index, 1);
+      setManualFood({ ...manualFood, ingredients: newIngs });
+    }
+  };
+
+  const updateIngredientPortion = (isAi: boolean, index: number, portion: string) => {
+    if (isAi && aiResult) {
+      const newIngs = [...aiResult.ingredients];
+      newIngs[index] = { ...newIngs[index], portion };
+      setAiResult({ ...aiResult, ingredients: newIngs });
+    } else {
+      const newIngs = [...manualFood.ingredients];
+      newIngs[index] = { ...newIngs[index], portion };
       setManualFood({ ...manualFood, ingredients: newIngs });
     }
   };
@@ -379,25 +395,38 @@ export const FoodTracker: React.FC = () => {
                     Recalculate Nutrition
                   </Button>
                 </div>
-                <div className="flex flex-wrap gap-2 p-3 rounded-lg border bg-muted/30">
+                <div className="space-y-2 p-3 rounded-lg border bg-muted/30">
                   {aiResult.ingredients.map((ing, idx) => (
-                    <div key={idx} className="flex items-center gap-1 bg-background border rounded-full px-3 py-1 text-xs">
-                      {ing}
-                      <button onClick={() => removeIngredient(true, idx)} className="hover:text-destructive">
+                    <div key={idx} className="flex items-center gap-2 bg-background border rounded-lg p-2 text-xs">
+                      <span className="font-medium flex-1">{ing.name}</span>
+                      <Input 
+                        className="w-20 h-7 text-[10px]" 
+                        value={ing.portion} 
+                        onChange={(e) => updateIngredientPortion(true, idx, e.target.value)}
+                        placeholder="Portion"
+                      />
+                      <button onClick={() => removeIngredient(true, idx)} className="hover:text-destructive p-1">
                         <X className="w-3 h-3" />
                       </button>
                     </div>
                   ))}
-                  <div className="flex items-center gap-1 w-full mt-2">
-                    <Input 
-                      placeholder="Add ingredient..." 
-                      className="h-8 text-xs" 
-                      value={newIngredient}
-                      onChange={e => setNewIngredient(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && addIngredient(true)}
-                    />
-                    <Button size="sm" className="h-8 px-2" onClick={() => addIngredient(true)}>
-                      <Plus className="w-4 h-4" />
+                  <div className="flex flex-col gap-2 mt-2">
+                    <div className="flex gap-2">
+                      <Input 
+                        placeholder="Ingredient name..." 
+                        className="h-8 text-xs flex-1" 
+                        value={newIngredient.name}
+                        onChange={e => setNewIngredient({...newIngredient, name: e.target.value})}
+                      />
+                      <Input 
+                        placeholder="Portion (e.g. 100g)" 
+                        className="h-8 text-xs w-24" 
+                        value={newIngredient.portion}
+                        onChange={e => setNewIngredient({...newIngredient, portion: e.target.value})}
+                      />
+                    </div>
+                    <Button size="sm" className="h-8 w-full" onClick={() => addIngredient(true)}>
+                      <Plus className="w-4 h-4 mr-2" /> Add Ingredient
                     </Button>
                   </div>
                 </div>
@@ -477,25 +506,38 @@ export const FoodTracker: React.FC = () => {
                   Recalculate Nutrition
                 </Button>
               </div>
-              <div className="flex flex-wrap gap-2 p-3 rounded-lg border bg-muted/30">
+              <div className="space-y-2 p-3 rounded-lg border bg-muted/30">
                 {manualFood.ingredients.map((ing, idx) => (
-                  <div key={idx} className="flex items-center gap-1 bg-background border rounded-full px-3 py-1 text-xs">
-                    {ing}
-                    <button onClick={() => removeIngredient(false, idx)} className="hover:text-destructive">
+                  <div key={idx} className="flex items-center gap-2 bg-background border rounded-lg p-2 text-xs">
+                    <span className="font-medium flex-1">{ing.name}</span>
+                    <Input 
+                      className="w-20 h-7 text-[10px]" 
+                      value={ing.portion} 
+                      onChange={(e) => updateIngredientPortion(false, idx, e.target.value)}
+                      placeholder="Portion"
+                    />
+                    <button onClick={() => removeIngredient(false, idx)} className="hover:text-destructive p-1">
                       <X className="w-3 h-3" />
                     </button>
                   </div>
                 ))}
-                <div className="flex items-center gap-1 w-full mt-2">
-                  <Input 
-                    placeholder="Add ingredient..." 
-                    className="h-8 text-xs" 
-                    value={newIngredient}
-                    onChange={e => setNewIngredient(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && addIngredient(false)}
-                  />
-                  <Button size="sm" className="h-8 px-2" onClick={() => addIngredient(false)}>
-                    <Plus className="w-4 h-4" />
+                <div className="flex flex-col gap-2 mt-2">
+                  <div className="flex gap-2">
+                    <Input 
+                      placeholder="Ingredient name..." 
+                      className="h-8 text-xs flex-1" 
+                      value={newIngredient.name}
+                      onChange={e => setNewIngredient({...newIngredient, name: e.target.value})}
+                    />
+                    <Input 
+                      placeholder="Portion (e.g. 100g)" 
+                      className="h-8 text-xs w-24" 
+                      value={newIngredient.portion}
+                      onChange={e => setNewIngredient({...newIngredient, portion: e.target.value})}
+                    />
+                  </div>
+                  <Button size="sm" className="h-8 w-full" onClick={() => addIngredient(false)}>
+                    <Plus className="w-4 h-4 mr-2" /> Add Ingredient
                   </Button>
                 </div>
               </div>
