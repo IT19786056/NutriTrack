@@ -180,58 +180,101 @@ export const AdminPanel: React.FC = () => {
                 <CardTitle>Whitelisted Users</CardTitle>
                 <CardDescription>Users who have been granted access to the app.</CardDescription>
               </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Email</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Invited At</TableHead>
-                      <TableHead className="text-right">Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {invitations.length === 0 ? (
+              <CardContent className="p-0 md:p-6">
+                <div className="hidden md:block">
+                  <Table>
+                    <TableHeader>
                       <TableRow>
-                        <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                          No invitations sent yet.
-                        </TableCell>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Invited At</TableHead>
+                        <TableHead className="text-right">Action</TableHead>
                       </TableRow>
-                    ) : (
-                      invitations.map((inv) => (
-                        <TableRow key={inv.email}>
-                          <TableCell className="font-medium">{inv.email}</TableCell>
-                          <TableCell>
+                    </TableHeader>
+                    <TableBody>
+                      {invitations.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                            No invitations sent yet.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        invitations.map((inv) => (
+                          <TableRow key={inv.email}>
+                            <TableCell className="font-medium">{inv.email}</TableCell>
+                            <TableCell>
+                              {inv.status === 'accepted' ? (
+                                <div className="flex items-center gap-1 text-green-500">
+                                  <CheckCircle2 className="w-4 h-4" />
+                                  <span className="text-xs">Accepted</span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1 text-orange-500">
+                                  <Clock className="w-4 h-4" />
+                                  <span className="text-xs">Pending</span>
+                                </div>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {new Date(inv.invitedAt).toLocaleDateString()}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                onClick={() => removeInvite(inv.email)}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+                
+                {/* Mobile View */}
+                <div className="md:hidden divide-y">
+                  {invitations.length === 0 ? (
+                    <div className="text-center text-muted-foreground py-8">
+                      No invitations sent yet.
+                    </div>
+                  ) : (
+                    invitations.map((inv) => (
+                      <div key={inv.email} className="p-4 flex items-center justify-between gap-4">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium truncate text-sm">{inv.email}</p>
+                          <div className="flex items-center gap-3 mt-1">
                             {inv.status === 'accepted' ? (
                               <div className="flex items-center gap-1 text-green-500">
-                                <CheckCircle2 className="w-4 h-4" />
-                                <span className="text-xs">Accepted</span>
+                                <CheckCircle2 className="w-3 h-3" />
+                                <span className="text-[10px]">Accepted</span>
                               </div>
                             ) : (
                               <div className="flex items-center gap-1 text-orange-500">
-                                <Clock className="w-4 h-4" />
-                                <span className="text-xs">Pending</span>
+                                <Clock className="w-3 h-3" />
+                                <span className="text-[10px]">Pending</span>
                               </div>
                             )}
-                          </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {new Date(inv.invitedAt).toLocaleDateString()}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                              onClick={() => removeInvite(inv.email)}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
+                            <span className="text-[10px] text-muted-foreground">
+                              {new Date(inv.invitedAt).toLocaleDateString()}
+                            </span>
+                          </div>
+                        </div>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="text-destructive h-8 w-8"
+                          onClick={() => removeInvite(inv.email)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ))
+                  )}
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -246,48 +289,84 @@ export const AdminPanel: React.FC = () => {
               </CardTitle>
               <CardDescription>Manage user roles and permissions.</CardDescription>
             </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>User</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead>Joined</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {users.map((u) => (
-                    <TableRow key={u.uid}>
-                      <TableCell className="font-medium">{u.displayName}</TableCell>
-                      <TableCell className="text-muted-foreground text-xs">{u.email}</TableCell>
-                      <TableCell>
-                        <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                          u.role === 'admin' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
-                        }`}>
-                          {u.role === 'admin' ? <ShieldCheck className="w-3 h-3" /> : <Shield className="w-3 h-3" />}
-                          {u.role || 'user'}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {new Date(u.createdAt).toLocaleDateString()}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          className="h-8 rounded-full text-xs"
-                          onClick={() => toggleAdmin(u)}
-                          disabled={u.email === 'ravindijason@gmail.com'}
-                        >
-                          {u.role === 'admin' ? 'Revoke Admin' : 'Make Admin'}
-                        </Button>
-                      </TableCell>
+            <CardContent className="p-0 md:p-6">
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>User</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Role</TableHead>
+                      <TableHead>Joined</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {users.map((u) => (
+                      <TableRow key={u.uid}>
+                        <TableCell className="font-medium">{u.displayName}</TableCell>
+                        <TableCell className="text-muted-foreground text-xs">{u.email}</TableCell>
+                        <TableCell>
+                          <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                            u.role === 'admin' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
+                          }`}>
+                            {u.role === 'admin' ? <ShieldCheck className="w-3 h-3" /> : <Shield className="w-3 h-3" />}
+                            {u.role || 'user'}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {new Date(u.createdAt).toLocaleDateString()}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="h-8 rounded-full text-xs"
+                            onClick={() => toggleAdmin(u)}
+                            disabled={u.email === 'ravindijason@gmail.com'}
+                          >
+                            {u.role === 'admin' ? 'Revoke Admin' : 'Make Admin'}
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Mobile View */}
+              <div className="md:hidden divide-y">
+                {users.map((u) => (
+                  <div key={u.uid} className="p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium truncate text-sm">{u.displayName}</p>
+                        <p className="text-xs text-muted-foreground truncate">{u.email}</p>
+                      </div>
+                      <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                        u.role === 'admin' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
+                      }`}>
+                        {u.role === 'admin' ? <ShieldCheck className="w-3 h-3" /> : <Shield className="w-3 h-3" />}
+                        {u.role || 'user'}
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-muted-foreground">
+                        Joined: {new Date(u.createdAt).toLocaleDateString()}
+                      </span>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="h-7 rounded-full text-[10px] px-3"
+                        onClick={() => toggleAdmin(u)}
+                        disabled={u.email === 'ravindijason@gmail.com'}
+                      >
+                        {u.role === 'admin' ? 'Revoke Admin' : 'Make Admin'}
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

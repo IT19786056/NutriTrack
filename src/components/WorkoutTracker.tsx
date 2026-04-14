@@ -1,24 +1,43 @@
-import React, { useState } from 'react';
-import { collection, addDoc } from 'firebase/firestore';
+import React, { useState, useEffect } from 'react';
+import { collection, addDoc, query, orderBy, onSnapshot, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '@/src/lib/firebase';
 import { useAuth } from '@/src/lib/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Dumbbell, Clock, Flame, Plus } from 'lucide-react';
+import { Dumbbell, Clock, Flame, Plus, Trash2, Calendar } from 'lucide-react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { handleFirestoreError, OperationType } from '@/src/lib/firestore-errors';
+import { WorkoutLog } from '@/src/types';
 
 export const WorkoutTracker: React.FC = () => {
   const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
+  const [workoutLogs, setWorkoutLogs] = useState<WorkoutLog[]>([]);
   const [workout, setWorkout] = useState({
     exercise: '',
     duration: '',
     caloriesBurned: ''
   });
+
+  useEffect(() => {
+    if (!user) return;
+
+    const q = query(
+      collection(db, `users/${user.uid}/workoutLogs`),
+      orderBy('timestamp', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setWorkoutLogs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WorkoutLog)));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/workoutLogs`);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
 
   const saveWorkout = async () => {
     if (!user || !workout.exercise || !workout.caloriesBurned) return;
@@ -37,6 +56,17 @@ export const WorkoutTracker: React.FC = () => {
       setWorkout({ exercise: '', duration: '', caloriesBurned: '' });
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, path);
+    }
+  };
+
+  const deleteWorkout = async (id: string) => {
+    if (!user || !id) return;
+    const path = `users/${user.uid}/workoutLogs/${id}`;
+    try {
+      await deleteDoc(doc(db, path));
+      toast.success('Workout deleted');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, path);
     }
   };
 
@@ -74,6 +104,56 @@ export const WorkoutTracker: React.FC = () => {
           </Card>
         ))}
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Calendar className="w-5 h-5 text-primary" />
+            Recent Workouts
+          </CardTitle>
+          <CardDescription>Your physical activity history.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {workoutLogs.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Dumbbell className="w-12 h-12 mx-auto mb-2 opacity-20" />
+                <p>No workouts logged yet.</p>
+              </div>
+            ) : (
+              workoutLogs.map((log) => (
+                <div key={log.id} className="flex items-center justify-between p-4 rounded-xl border bg-card hover:shadow-md transition-shadow">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                      <Dumbbell className="w-5 h-5 text-primary" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold">{log.exercise}</h4>
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3 h-3" /> {log.duration} mins
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Flame className="w-3 h-3" /> {log.caloriesBurned} kcal
+                        </span>
+                        <span>{new Date(log.timestamp).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => log.id && deleteWorkout(log.id)}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
         <DialogContent>
