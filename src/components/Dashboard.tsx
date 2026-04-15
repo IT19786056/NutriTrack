@@ -220,6 +220,18 @@ export const Dashboard: React.FC = () => {
                             <span className="font-medium">{log.fats}g</span>
                           </div>
                         </div>
+                        {log.items && log.items.length > 0 && (
+                          <div className="pt-1 border-t mt-1">
+                            <p className="text-[9px] font-medium text-muted-foreground mb-1">Items:</p>
+                            <div className="flex flex-wrap gap-1">
+                              {log.items.map((item, i) => (
+                                <span key={i} className="text-[8px] bg-muted px-1.5 py-0.5 rounded-full">
+                                  {item.name} ({item.portion})
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ))
                   )}

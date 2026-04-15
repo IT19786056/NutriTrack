@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { Ingredient } from "../types";
+import { FoodItem } from "../types";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -10,14 +10,14 @@ export interface NutritionalInfo {
   carbs: number;
   fats: number;
   servingSize: string;
-  ingredients: Ingredient[];
+  items: FoodItem[];
 }
 
-const ingredientSchema = {
+const foodItemSchema = {
   type: Type.OBJECT,
   properties: {
-    name: { type: Type.STRING, description: "Name of the ingredient" },
-    portion: { type: Type.STRING, description: "Portion size (e.g., 100g, 1 cup, 2 slices)" }
+    name: { type: Type.STRING, description: "Name of the food item or component (e.g., 'Rice', 'Chicken Curry', 'Ice Cream')" },
+    portion: { type: Type.STRING, description: "Portion size or measurement (e.g., '1 cup', '100g', '2 scoops', '1 slice')" }
   },
   required: ["name", "portion"]
 };
@@ -35,7 +35,7 @@ export async function analyzeFoodImage(base64Image: string): Promise<Nutritional
             },
           },
           {
-            text: "Analyze this food image and provide nutritional information. Also list the main ingredients used in this dish with their estimated portions. Be as accurate as possible with estimations.",
+            text: "Analyze this food image and provide nutritional information. Identify the distinct food items/components in the dish (e.g., if it's rice and curry, list 'Rice', 'Chicken Curry', etc.) and their estimated portions (e.g., '1 cup', '100g', '2 scoops'). Be as accurate as possible with estimations.",
           },
         ],
       },
@@ -51,13 +51,13 @@ export async function analyzeFoodImage(base64Image: string): Promise<Nutritional
           carbs: { type: Type.NUMBER, description: "Estimated carbohydrates in grams" },
           fats: { type: Type.NUMBER, description: "Estimated fats in grams" },
           servingSize: { type: Type.STRING, description: "Estimated serving size" },
-          ingredients: { 
+          items: { 
             type: Type.ARRAY, 
-            items: ingredientSchema,
-            description: "List of main ingredients with portions"
+            items: foodItemSchema,
+            description: "List of distinct food items/components with portions"
           },
         },
-        required: ["name", "calories", "protein", "carbs", "fats", "servingSize", "ingredients"],
+        required: ["name", "calories", "protein", "carbs", "fats", "servingSize", "items"],
       },
     },
   });
@@ -68,7 +68,7 @@ export async function analyzeFoodImage(base64Image: string): Promise<Nutritional
 export async function getNutritionByName(name: string): Promise<NutritionalInfo> {
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
-    contents: `Provide nutritional information for "${name}". Also list the main ingredients with estimated portions for a standard serving. Be as accurate as possible with estimations.`,
+    contents: `Provide nutritional information for "${name}". Identify the distinct food items/components that make up this dish and their estimated portions for a standard serving. Be as accurate as possible with estimations.`,
     config: {
       responseMimeType: "application/json",
       responseSchema: {
@@ -80,12 +80,12 @@ export async function getNutritionByName(name: string): Promise<NutritionalInfo>
           carbs: { type: Type.NUMBER },
           fats: { type: Type.NUMBER },
           servingSize: { type: Type.STRING },
-          ingredients: { 
+          items: { 
             type: Type.ARRAY, 
-            items: ingredientSchema
+            items: foodItemSchema
           },
         },
-        required: ["name", "calories", "protein", "carbs", "fats", "servingSize", "ingredients"],
+        required: ["name", "calories", "protein", "carbs", "fats", "servingSize", "items"],
       },
     },
   });
@@ -93,11 +93,11 @@ export async function getNutritionByName(name: string): Promise<NutritionalInfo>
   return JSON.parse(response.text);
 }
 
-export async function recalculateNutrition(ingredients: Ingredient[], foodName: string): Promise<NutritionalInfo> {
-  const ingredientsStr = ingredients.map(i => `${i.portion} of ${i.name}`).join(', ');
+export async function recalculateNutrition(items: FoodItem[], foodName: string): Promise<NutritionalInfo> {
+  const itemsStr = items.map(i => `${i.portion} of ${i.name}`).join(', ');
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
-    contents: `Recalculate the nutritional information for "${foodName}" based on this specific list of ingredients and their portions: ${ingredientsStr}. 
+    contents: `Recalculate the nutritional information for "${foodName}" based on this specific list of food items/components and their portions: ${itemsStr}. 
     CRITICAL: Provide the total nutritional facts for the WHOLE dish based on these specific portions. 
     Ensure the values are realistic (e.g., 100g of chicken is ~31g protein, not 200g).`,
     config: {
@@ -111,12 +111,12 @@ export async function recalculateNutrition(ingredients: Ingredient[], foodName: 
           carbs: { type: Type.NUMBER },
           fats: { type: Type.NUMBER },
           servingSize: { type: Type.STRING },
-          ingredients: { 
+          items: { 
             type: Type.ARRAY, 
-            items: ingredientSchema
+            items: foodItemSchema
           },
         },
-        required: ["name", "calories", "protein", "carbs", "fats", "servingSize", "ingredients"],
+        required: ["name", "calories", "protein", "carbs", "fats", "servingSize", "items"],
       },
     },
   });

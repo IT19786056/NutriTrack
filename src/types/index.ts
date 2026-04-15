@@ -10,7 +10,7 @@ export interface UserProfile {
   role?: 'admin' | 'user';
 }
 
-export interface Ingredient {
+export interface FoodItem {
   name: string;
   portion: string;
 }
@@ -26,7 +26,7 @@ export interface FoodLog {
   timestamp: string;
   imageUrl?: string;
   mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack';
-  ingredients?: Ingredient[];
+  items?: FoodItem[];
 }
 
 export interface WorkoutLog {

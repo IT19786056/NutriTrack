@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { handleFirestoreError, OperationType } from '@/src/lib/firestore-errors';
 import { resizeImage } from '@/src/lib/image-utils';
-import { FoodLog, Ingredient } from '@/src/types';
+import { FoodLog, FoodItem } from '@/src/types';
 
 export const FoodTracker: React.FC = () => {
   const { user } = useAuth();
@@ -35,10 +35,10 @@ export const FoodTracker: React.FC = () => {
     carbs: '',
     fats: '',
     mealType: 'lunch' as const,
-    ingredients: [] as Ingredient[]
+    items: [] as FoodItem[]
   });
 
-  const [newIngredient, setNewIngredient] = useState({ name: '', portion: '' });
+  const [newItem, setNewItem] = useState({ name: '', portion: '' });
 
   useEffect(() => {
     if (!user) return;
@@ -72,7 +72,7 @@ export const FoodTracker: React.FC = () => {
         protein: result.protein.toString(),
         carbs: result.carbs.toString(),
         fats: result.fats.toString(),
-        ingredients: result.ingredients || []
+        items: result.items || []
       });
       toast.success(`Found nutritional facts for ${manualFood.name}`);
     } catch (error) {
@@ -85,14 +85,14 @@ export const FoodTracker: React.FC = () => {
 
   const handleRecalculate = async (isAi: boolean) => {
     const currentFood = isAi ? aiResult : manualFood;
-    if (!currentFood || !currentFood.ingredients || currentFood.ingredients.length === 0) {
-      toast.error('Add ingredients to recalculate');
+    if (!currentFood || !currentFood.items || currentFood.items.length === 0) {
+      toast.error('Add items to recalculate');
       return;
     }
 
     setIsRecalculating(true);
     try {
-      const result = await recalculateNutrition(currentFood.ingredients, currentFood.name);
+      const result = await recalculateNutrition(currentFood.items, currentFood.name);
       if (isAi && aiResult) {
         setAiResult({
           ...aiResult,
@@ -100,7 +100,7 @@ export const FoodTracker: React.FC = () => {
           protein: result.protein,
           carbs: result.carbs,
           fats: result.fats,
-          ingredients: result.ingredients
+          items: result.items
         });
       } else {
         setManualFood({
@@ -109,10 +109,10 @@ export const FoodTracker: React.FC = () => {
           protein: result.protein.toString(),
           carbs: result.carbs.toString(),
           fats: result.fats.toString(),
-          ingredients: result.ingredients
+          items: result.items
         });
       }
-      toast.success('Nutrition updated based on ingredients');
+      toast.success('Nutrition updated based on items');
     } catch (error) {
       console.error('Recalculation failed:', error);
       toast.error('Failed to recalculate nutrition');
@@ -171,14 +171,14 @@ export const FoodTracker: React.FC = () => {
         mealType: food.mealType || 'snack',
         timestamp: new Date().toISOString(),
         imageUrl: capturedImage || null,
-        ingredients: food.ingredients || []
+        items: food.items || []
       });
       toast.success(`${food.name} logged successfully!`);
       setIsManualOpen(false);
       setIsAiResultOpen(false);
       setAiResult(null);
       setCapturedImage(null);
-      setManualFood({ name: '', calories: '', protein: '', carbs: '', fats: '', mealType: 'lunch', ingredients: [] });
+      setManualFood({ name: '', calories: '', protein: '', carbs: '', fats: '', mealType: 'lunch', items: [] });
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, path);
     }
@@ -195,41 +195,41 @@ export const FoodTracker: React.FC = () => {
     }
   };
 
-  const addIngredient = (isAi: boolean) => {
-    if (!newIngredient.name.trim() || !newIngredient.portion.trim()) {
+  const addItem = (isAi: boolean) => {
+    if (!newItem.name.trim() || !newItem.portion.trim()) {
       toast.error('Enter both name and portion');
       return;
     }
-    const ingredient: Ingredient = { name: newIngredient.name.trim(), portion: newIngredient.portion.trim() };
+    const item: FoodItem = { name: newItem.name.trim(), portion: newItem.portion.trim() };
     if (isAi && aiResult) {
-      setAiResult({ ...aiResult, ingredients: [...aiResult.ingredients, ingredient] });
+      setAiResult({ ...aiResult, items: [...aiResult.items, item] });
     } else {
-      setManualFood({ ...manualFood, ingredients: [...manualFood.ingredients, ingredient] });
+      setManualFood({ ...manualFood, items: [...manualFood.items, item] });
     }
-    setNewIngredient({ name: '', portion: '' });
+    setNewItem({ name: '', portion: '' });
   };
 
-  const removeIngredient = (isAi: boolean, index: number) => {
+  const removeItem = (isAi: boolean, index: number) => {
     if (isAi && aiResult) {
-      const newIngs = [...aiResult.ingredients];
-      newIngs.splice(index, 1);
-      setAiResult({ ...aiResult, ingredients: newIngs });
+      const newItems = [...aiResult.items];
+      newItems.splice(index, 1);
+      setAiResult({ ...aiResult, items: newItems });
     } else {
-      const newIngs = [...manualFood.ingredients];
-      newIngs.splice(index, 1);
-      setManualFood({ ...manualFood, ingredients: newIngs });
+      const newItems = [...manualFood.items];
+      newItems.splice(index, 1);
+      setManualFood({ ...manualFood, items: newItems });
     }
   };
 
-  const updateIngredientPortion = (isAi: boolean, index: number, portion: string) => {
+  const updateItemPortion = (isAi: boolean, index: number, portion: string) => {
     if (isAi && aiResult) {
-      const newIngs = [...aiResult.ingredients];
-      newIngs[index] = { ...newIngs[index], portion };
-      setAiResult({ ...aiResult, ingredients: newIngs });
+      const newItems = [...aiResult.items];
+      newItems[index] = { ...newItems[index], portion };
+      setAiResult({ ...aiResult, items: newItems });
     } else {
-      const newIngs = [...manualFood.ingredients];
-      newIngs[index] = { ...newIngs[index], portion };
-      setManualFood({ ...manualFood, ingredients: newIngs });
+      const newItems = [...manualFood.items];
+      newItems[index] = { ...newItems[index], portion };
+      setManualFood({ ...manualFood, items: newItems });
     }
   };
 
@@ -380,10 +380,10 @@ export const FoodTracker: React.FC = () => {
                 </div>
               </div>
 
-              {/* Ingredients Section */}
+              {/* Items Section */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm font-bold">Ingredients</Label>
+                  <Label className="text-sm font-bold">Food Items / Components</Label>
                   <Button 
                     variant="outline" 
                     size="sm" 
@@ -396,16 +396,16 @@ export const FoodTracker: React.FC = () => {
                   </Button>
                 </div>
                 <div className="space-y-2 p-3 rounded-lg border bg-muted/30">
-                  {aiResult.ingredients.map((ing, idx) => (
+                  {aiResult.items.map((item, idx) => (
                     <div key={idx} className="flex items-center gap-2 bg-background border rounded-lg p-2 text-xs">
-                      <span className="font-medium flex-1">{ing.name}</span>
+                      <span className="font-medium flex-1">{item.name}</span>
                       <Input 
-                        className="w-20 h-7 text-[10px]" 
-                        value={ing.portion} 
-                        onChange={(e) => updateIngredientPortion(true, idx, e.target.value)}
-                        placeholder="Portion"
+                        className="w-24 h-7 text-[10px]" 
+                        value={item.portion} 
+                        onChange={(e) => updateItemPortion(true, idx, e.target.value)}
+                        placeholder="Portion (e.g. 1 cup)"
                       />
-                      <button onClick={() => removeIngredient(true, idx)} className="hover:text-destructive p-1">
+                      <button onClick={() => removeItem(true, idx)} className="hover:text-destructive p-1">
                         <X className="w-3 h-3" />
                       </button>
                     </div>
@@ -413,20 +413,20 @@ export const FoodTracker: React.FC = () => {
                   <div className="flex flex-col gap-2 mt-2">
                     <div className="flex gap-2">
                       <Input 
-                        placeholder="Ingredient name..." 
+                        placeholder="Item name (e.g. Rice)" 
                         className="h-8 text-xs flex-1" 
-                        value={newIngredient.name}
-                        onChange={e => setNewIngredient({...newIngredient, name: e.target.value})}
+                        value={newItem.name}
+                        onChange={e => setNewItem({...newItem, name: e.target.value})}
                       />
                       <Input 
-                        placeholder="Portion (e.g. 100g)" 
+                        placeholder="Portion" 
                         className="h-8 text-xs w-24" 
-                        value={newIngredient.portion}
-                        onChange={e => setNewIngredient({...newIngredient, portion: e.target.value})}
+                        value={newItem.portion}
+                        onChange={e => setNewItem({...newItem, portion: e.target.value})}
                       />
                     </div>
-                    <Button size="sm" className="h-8 w-full" onClick={() => addIngredient(true)}>
-                      <Plus className="w-4 h-4 mr-2" /> Add Ingredient
+                    <Button size="sm" className="h-8 w-full" onClick={() => addItem(true)}>
+                      <Plus className="w-4 h-4 mr-2" /> Add Item
                     </Button>
                   </div>
                 </div>
@@ -453,7 +453,7 @@ export const FoodTracker: React.FC = () => {
 
               <div className="flex items-start gap-2 p-3 rounded-lg bg-muted text-[10px] text-muted-foreground">
                 <Info className="w-4 h-4 shrink-0" />
-                <p>Modifying ingredients allows for more accurate nutrition tracking. Click "Recalculate" to update macros based on your changes.</p>
+                <p>Modifying items allows for more accurate nutrition tracking. Click "Recalculate" to update macros based on your changes.</p>
               </div>
             </div>
           )}
@@ -491,10 +491,10 @@ export const FoodTracker: React.FC = () => {
               </div>
             </div>
 
-            {/* Ingredients Section for Manual */}
+            {/* Items Section for Manual */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <Label className="text-sm font-bold">Ingredients</Label>
+                <Label className="text-sm font-bold">Food Items / Components</Label>
                 <Button 
                   variant="outline" 
                   size="sm" 
@@ -507,16 +507,16 @@ export const FoodTracker: React.FC = () => {
                 </Button>
               </div>
               <div className="space-y-2 p-3 rounded-lg border bg-muted/30">
-                {manualFood.ingredients.map((ing, idx) => (
+                {manualFood.items.map((item, idx) => (
                   <div key={idx} className="flex items-center gap-2 bg-background border rounded-lg p-2 text-xs">
-                    <span className="font-medium flex-1">{ing.name}</span>
+                    <span className="font-medium flex-1">{item.name}</span>
                     <Input 
-                      className="w-20 h-7 text-[10px]" 
-                      value={ing.portion} 
-                      onChange={(e) => updateIngredientPortion(false, idx, e.target.value)}
+                      className="w-24 h-7 text-[10px]" 
+                      value={item.portion} 
+                      onChange={(e) => updateItemPortion(false, idx, e.target.value)}
                       placeholder="Portion"
                     />
-                    <button onClick={() => removeIngredient(false, idx)} className="hover:text-destructive p-1">
+                    <button onClick={() => removeItem(false, idx)} className="hover:text-destructive p-1">
                       <X className="w-3 h-3" />
                     </button>
                   </div>
@@ -524,20 +524,20 @@ export const FoodTracker: React.FC = () => {
                 <div className="flex flex-col gap-2 mt-2">
                   <div className="flex gap-2">
                     <Input 
-                      placeholder="Ingredient name..." 
+                      placeholder="Item name (e.g. Rice)" 
                       className="h-8 text-xs flex-1" 
-                      value={newIngredient.name}
-                      onChange={e => setNewIngredient({...newIngredient, name: e.target.value})}
+                      value={newItem.name}
+                      onChange={e => setNewItem({...newItem, name: e.target.value})}
                     />
                     <Input 
-                      placeholder="Portion (e.g. 100g)" 
+                      placeholder="Portion" 
                       className="h-8 text-xs w-24" 
-                      value={newIngredient.portion}
-                      onChange={e => setNewIngredient({...newIngredient, portion: e.target.value})}
+                      value={newItem.portion}
+                      onChange={e => setNewItem({...newItem, portion: e.target.value})}
                     />
                   </div>
-                  <Button size="sm" className="h-8 w-full" onClick={() => addIngredient(false)}>
-                    <Plus className="w-4 h-4 mr-2" /> Add Ingredient
+                  <Button size="sm" className="h-8 w-full" onClick={() => addItem(false)}>
+                    <Plus className="w-4 h-4 mr-2" /> Add Item
                   </Button>
                 </div>
               </div>
