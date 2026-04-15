@@ -17,8 +17,11 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { Loader2, ShieldAlert, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { auth } from './lib/firebase';
+import { registerSW } from 'virtual:pwa-register';
 
 import { AdminPanel } from './components/AdminPanel';
+
+registerSW({ immediate: true });
 
 const AppContent = () => {
   const { user, loading, isAuthorized, isAdmin } = useAuth();
