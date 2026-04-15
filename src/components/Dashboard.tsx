@@ -6,16 +6,17 @@ import { FoodLog, WorkoutLog, WaterLog } from '@/src/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
-import { Utensils, Dumbbell, Droplets, Flame, Target, TrendingUp } from 'lucide-react';
+import { Utensils, Dumbbell, Droplets, Flame, Target, TrendingUp, Info, ChevronRight } from 'lucide-react';
 import { format, startOfDay, endOfDay, subDays, isSameDay } from 'date-fns';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 export const Dashboard: React.FC = () => {
   const { user, profile } = useAuth();
+  const [isNutritionOpen, setIsNutritionOpen] = useState(false);
   const [foodLogs, setFoodLogs] = useState<FoodLog[]>([]);
   const [workoutLogs, setWorkoutLogs] = useState<WorkoutLog[]>([]);
   const [waterLogs, setWaterLogs] = useState<WaterLog[]>([]);
-  const [selectedWidget, setSelectedWidget] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -56,16 +57,16 @@ export const Dashboard: React.FC = () => {
   const todayWater = waterLogs.filter(log => isSameDay(new Date(log.timestamp), today));
 
   const consumedCalories = todayFood.reduce((sum, log) => sum + log.calories, 0);
+  const totalProtein = todayFood.reduce((sum, log) => sum + (log.protein || 0), 0);
+  const totalCarbs = todayFood.reduce((sum, log) => sum + (log.carbs || 0), 0);
+  const totalFats = todayFood.reduce((sum, log) => sum + (log.fats || 0), 0);
+  
   const burnedCalories = todayWorkout.reduce((sum, log) => sum + log.caloriesBurned, 0);
   const totalWater = todayWater.reduce((sum, log) => sum + log.amount, 0);
   
   const netCalories = consumedCalories - burnedCalories;
   const calorieGoal = profile?.dailyCalorieGoal || 2000;
   const waterGoal = profile?.dailyWaterGoal || 2000;
-
-  const totalProtein = todayFood.reduce((sum, log) => sum + log.protein, 0);
-  const totalCarbs = todayFood.reduce((sum, log) => sum + log.carbs, 0);
-  const totalFats = todayFood.reduce((sum, log) => sum + log.fats, 0);
 
   // Chart Data (Last 7 days)
   const chartData = Array.from({ length: 7 }).map((_, i) => {
@@ -89,13 +90,19 @@ export const Dashboard: React.FC = () => {
 
       {/* Stats Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="relative overflow-hidden border-none bg-primary/10 cursor-pointer" onClick={() => setSelectedWidget('netCalories')}>
+        <Card 
+          className="relative overflow-hidden border-none bg-primary/10 cursor-pointer hover:bg-primary/15 transition-colors group"
+          onClick={() => setIsNutritionOpen(true)}
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Net Calories</CardTitle>
             <Flame className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{netCalories} kcal</div>
+            <div className="flex items-baseline justify-between">
+              <div className="text-2xl font-bold">{netCalories} kcal</div>
+              <ChevronRight className="h-4 w-4 text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
+            </div>
             <p className="text-xs text-muted-foreground">
               {consumedCalories} in / {burnedCalories} out
             </p>
@@ -103,7 +110,7 @@ export const Dashboard: React.FC = () => {
           </CardContent>
         </Card>
 
-        <Card className="border-none bg-blue-500/10 dark:bg-blue-500/20 cursor-pointer" onClick={() => setSelectedWidget('hydration')}>
+        <Card className="border-none bg-blue-500/10 dark:bg-blue-500/20">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Hydration</CardTitle>
             <Droplets className="h-4 w-4 text-blue-500" />
@@ -117,7 +124,7 @@ export const Dashboard: React.FC = () => {
           </CardContent>
         </Card>
 
-        <Card className="border-none bg-green-500/10 dark:bg-green-500/20 cursor-pointer" onClick={() => setSelectedWidget('workouts')}>
+        <Card className="border-none bg-green-500/10 dark:bg-green-500/20">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Workouts</CardTitle>
             <Dumbbell className="h-4 w-4 text-green-500" />
@@ -130,19 +137,98 @@ export const Dashboard: React.FC = () => {
           </CardContent>
         </Card>
 
-        <Card className="border-none bg-orange-500/10 dark:bg-orange-500/20 cursor-pointer" onClick={() => setSelectedWidget('calorieGoal')}>
+        <Card 
+          className="border-none bg-orange-500/10 dark:bg-orange-500/20 cursor-pointer hover:bg-orange-500/15 transition-colors group"
+          onClick={() => setIsNutritionOpen(true)}
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Calorie Goal</CardTitle>
             <Target className="h-4 w-4 text-orange-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{calorieGoal} kcal</div>
+            <div className="flex items-baseline justify-between">
+              <div className="text-2xl font-bold">{calorieGoal} kcal</div>
+              <ChevronRight className="h-4 w-4 text-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </div>
             <p className="text-xs text-muted-foreground">
               {Math.max(0, calorieGoal - netCalories)} kcal remaining
             </p>
           </CardContent>
         </Card>
       </div>
+
+      {/* Nutrition Summary Dialog */}
+      <Dialog open={isNutritionOpen} onOpenChange={setIsNutritionOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Daily Nutrition Summary</DialogTitle>
+            <DialogDescription>
+              Detailed breakdown for {format(today, 'MMMM do, yyyy')}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6 py-4">
+            {/* Macro Totals */}
+            <div className="grid grid-cols-3 gap-4">
+              <div className="flex flex-col items-center p-3 rounded-2xl bg-blue-500/10 border border-blue-500/20">
+                <span className="text-[10px] font-bold uppercase text-blue-500 mb-1">Protein</span>
+                <span className="text-xl font-bold">{totalProtein}g</span>
+              </div>
+              <div className="flex flex-col items-center p-3 rounded-2xl bg-green-500/10 border border-green-500/20">
+                <span className="text-[10px] font-bold uppercase text-green-500 mb-1">Carbs</span>
+                <span className="text-xl font-bold">{totalCarbs}g</span>
+              </div>
+              <div className="flex flex-col items-center p-3 rounded-2xl bg-orange-500/10 border border-orange-500/20">
+                <span className="text-[10px] font-bold uppercase text-orange-500 mb-1">Fats</span>
+                <span className="text-xl font-bold">{totalFats}g</span>
+              </div>
+            </div>
+
+            {/* Food Wise Breakdown */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-bold flex items-center gap-2">
+                <Utensils className="w-4 h-4 text-primary" />
+                Logged Foods
+              </h4>
+              <ScrollArea className="h-[300px] pr-4">
+                <div className="space-y-3">
+                  {todayFood.length === 0 ? (
+                    <p className="text-center py-8 text-muted-foreground text-sm italic">
+                      No foods logged today yet.
+                    </p>
+                  ) : (
+                    todayFood.map((log) => (
+                      <div key={log.id} className="p-3 rounded-xl border bg-card/50 space-y-2">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-bold text-sm">{log.name}</p>
+                            <p className="text-[10px] text-muted-foreground capitalize">{log.mealType}</p>
+                          </div>
+                          <span className="text-sm font-bold text-primary">{log.calories} kcal</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-[10px]">
+                          <div className="flex justify-between border-r pr-2">
+                            <span className="text-muted-foreground">P:</span>
+                            <span className="font-medium">{log.protein}g</span>
+                          </div>
+                          <div className="flex justify-between border-r px-2">
+                            <span className="text-muted-foreground">C:</span>
+                            <span className="font-medium">{log.carbs}g</span>
+                          </div>
+                          <div className="flex justify-between pl-2">
+                            <span className="text-muted-foreground">F:</span>
+                            <span className="font-medium">{log.fats}g</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </ScrollArea>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Charts */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
@@ -205,128 +291,6 @@ export const Dashboard: React.FC = () => {
           </CardContent>
         </Card>
       </div>
-
-      <Dialog open={selectedWidget === 'netCalories'} onOpenChange={() => setSelectedWidget(null)}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Net Calories Details</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <h3 className="font-semibold">Daily Totals</h3>
-                <p>Calories Consumed: {consumedCalories} kcal</p>
-                <p>Calories Burned: {burnedCalories} kcal</p>
-                <p>Net Calories: {netCalories} kcal</p>
-              </div>
-              <div>
-                <h3 className="font-semibold">Nutritional Breakdown</h3>
-                <p>Protein: {totalProtein.toFixed(1)}g</p>
-                <p>Carbs: {totalCarbs.toFixed(1)}g</p>
-                <p>Fats: {totalFats.toFixed(1)}g</p>
-              </div>
-            </div>
-            <div>
-              <h3 className="font-semibold mb-2">Foods Tracked Today</h3>
-              <div className="space-y-2 max-h-60 overflow-y-auto">
-                {todayFood.map((food, index) => (
-                  <div key={index} className="border rounded p-2">
-                    <div className="font-medium">{food.name}</div>
-                    <div className="text-sm text-muted-foreground">
-                      Calories: {food.calories} | Protein: {food.protein}g | Carbs: {food.carbs}g | Fats: {food.fats}g
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={selectedWidget === 'hydration'} onOpenChange={() => setSelectedWidget(null)}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Hydration Details</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <h3 className="font-semibold">Daily Total</h3>
-              <p>Total Water: {totalWater} ml / Goal: {waterGoal} ml</p>
-            </div>
-            <div>
-              <h3 className="font-semibold mb-2">Water Logs Today</h3>
-              <div className="space-y-2 max-h-60 overflow-y-auto">
-                {todayWater.map((water, index) => (
-                  <div key={index} className="border rounded p-2">
-                    <div className="font-medium">{water.amount} ml</div>
-                    <div className="text-sm text-muted-foreground">
-                      {format(new Date(water.timestamp), 'HH:mm')}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={selectedWidget === 'workouts'} onOpenChange={() => setSelectedWidget(null)}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Workout Details</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <h3 className="font-semibold">Daily Summary</h3>
-              <p>Total Sessions: {todayWorkout.length}</p>
-              <p>Total Calories Burned: {burnedCalories} kcal</p>
-            </div>
-            <div>
-              <h3 className="font-semibold mb-2">Workouts Today</h3>
-              <div className="space-y-2 max-h-60 overflow-y-auto">
-                {todayWorkout.map((workout, index) => (
-                  <div key={index} className="border rounded p-2">
-                    <div className="font-medium">{workout.exercise}</div>
-                    <div className="text-sm text-muted-foreground">
-                      Duration: {workout.duration} min | Calories Burned: {workout.caloriesBurned} kcal
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={selectedWidget === 'calorieGoal'} onOpenChange={() => setSelectedWidget(null)}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Calorie Goal Details</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <h3 className="font-semibold">Goal Progress</h3>
-              <p>Daily Goal: {calorieGoal} kcal</p>
-              <p>Net Calories: {netCalories} kcal</p>
-              <p>Remaining: {Math.max(0, calorieGoal - netCalories)} kcal</p>
-              <Progress value={(netCalories / calorieGoal) * 100} className="mt-2" />
-            </div>
-            <div>
-              <h3 className="font-semibold mb-2">Foods Contributing</h3>
-              <div className="space-y-2 max-h-60 overflow-y-auto">
-                {todayFood.map((food, index) => (
-                  <div key={index} className="border rounded p-2">
-                    <div className="font-medium">{food.name}</div>
-                    <div className="text-sm text-muted-foreground">
-                      Calories: {food.calories}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };
