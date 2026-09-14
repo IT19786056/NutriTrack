@@ -3,7 +3,10 @@ import nodemailer from 'nodemailer';
 import crypto from 'crypto';
 
 const DEFAULT_FIREBASE_PROJECT_ID = 'calorieapp-caca8';
-const DEFAULT_ADMIN_EMAIL = 'ravindijason@gmail.com';
+const KNOWN_ADMIN_EMAILS = [
+  'ravindijason@gmail.com',
+  'jasonlawrene23@gmail.com',
+];
 
 // Cache for Google's public certificates
 let cachedCertificates: Record<string, string> | null = null;
@@ -32,7 +35,7 @@ async function getGooglePublicKeys(): Promise<Record<string, string>> {
   return cachedCertificates;
 }
 
-async function verifyFirebaseToken(idToken: string): Promise<{ email?: string; [key: string]: any }> {
+async function verifyFirebaseToken(idToken: string): Promise<{ uid: string; email?: string; [key: string]: any }> {
   if (!idToken || typeof idToken !== 'string') {
     throw new Error('Authentication token is missing.');
   }
@@ -86,7 +89,54 @@ async function verifyFirebaseToken(idToken: string): Promise<{ email?: string; [
     throw new Error(`Invalid token audience. Expected ${projectId}, got ${payload.aud}`);
   }
 
-  return payload;
+  return {
+    ...payload,
+    uid: payload.user_id || payload.sub,
+  };
+}
+
+async function isUserAdmin(token: string, uid: string, email?: string): Promise<boolean> {
+  const configuredAdmins = (process.env.ADMIN_EMAIL || '')
+    .split(',')
+    .map((e) => e.toLowerCase().trim())
+    .filter(Boolean);
+
+  const allAdminEmails = [...KNOWN_ADMIN_EMAILS, ...configuredAdmins];
+
+  if (email && allAdminEmails.includes(email.toLowerCase().trim())) {
+    return true;
+  }
+
+  // Check Firestore user document for role === 'admin'
+  if (token && uid) {
+    try {
+      const projectId =
+        process.env.VITE_FIREBASE_PROJECT_ID ||
+        process.env.FIREBASE_PROJECT_ID ||
+        DEFAULT_FIREBASE_PROJECT_ID;
+
+      const res = await fetch(
+        `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${encodeURIComponent(uid)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (res.ok) {
+        const doc = await res.json();
+        const role = doc.fields?.role?.stringValue;
+        if (role === 'admin') {
+          return true;
+        }
+      }
+    } catch (err) {
+      console.warn('Firestore admin check error:', err);
+    }
+  }
+
+  return false;
 }
 
 // In-memory rate limiting (serverless-friendly)
@@ -140,12 +190,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const token = authHeader.slice(7).trim();
 
     let callerEmail: string | undefined;
+    let callerUid: string = '';
     try {
       const decoded = await verifyFirebaseToken(token);
       callerEmail = decoded.email;
-      const configuredAdmin = (process.env.ADMIN_EMAIL || DEFAULT_ADMIN_EMAIL).toLowerCase().trim();
-      if (!callerEmail || callerEmail.toLowerCase().trim() !== configuredAdmin) {
-        return res.status(403).json({ error: 'Forbidden: Administrator access required.' });
+      callerUid = decoded.uid;
+
+      const authorizedAdmin = await isUserAdmin(token, callerUid, callerEmail);
+      if (!authorizedAdmin) {
+        return res.status(403).json({
+          error: `Forbidden: Administrator access required. Signed in as: ${callerEmail || 'unknown'}.`,
+        });
       }
     } catch (err: any) {
       console.error('Token verification error:', err.message || err);

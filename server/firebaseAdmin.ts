@@ -16,7 +16,10 @@ export interface DecodedIdToken {
 }
 
 export const DEFAULT_FIREBASE_PROJECT_ID = 'calorieapp-caca8';
-export const DEFAULT_ADMIN_EMAIL = 'ravindijason@gmail.com';
+export const KNOWN_ADMIN_EMAILS = [
+  'ravindijason@gmail.com',
+  'jasonlawrene23@gmail.com',
+];
 
 let cachedCertificates: Record<string, string> | null = null;
 let certsExpiryTime = 0;
@@ -55,7 +58,7 @@ export async function verifyToken(idToken: string): Promise<DecodedIdToken> {
   }
 
   const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
-  const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as DecodedIdToken;
+  const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
 
   if (header.alg !== 'RS256') {
     throw new Error(`Unsupported token algorithm: ${header.alg}. Expected RS256.`);
@@ -98,7 +101,10 @@ export async function verifyToken(idToken: string): Promise<DecodedIdToken> {
     throw new Error(`Invalid token audience. Expected ${projectId}, got ${payload.aud}`);
   }
 
-  return payload;
+  return {
+    ...payload,
+    uid: payload.user_id || payload.sub,
+  } as DecodedIdToken;
 }
 
 export function extractBearerToken(authHeader?: string | null): string | null {
@@ -108,8 +114,45 @@ export function extractBearerToken(authHeader?: string | null): string | null {
   return authHeader.slice(7).trim();
 }
 
-export function isAdminEmail(email?: string | null): boolean {
-  if (!email) return false;
-  const configuredAdmin = (process.env.ADMIN_EMAIL || DEFAULT_ADMIN_EMAIL).toLowerCase().trim();
-  return email.toLowerCase().trim() === configuredAdmin;
+export async function isUserAdmin(token: string, uid: string, email?: string): Promise<boolean> {
+  const configuredAdmins = (process.env.ADMIN_EMAIL || '')
+    .split(',')
+    .map((e) => e.toLowerCase().trim())
+    .filter(Boolean);
+
+  const allAdminEmails = [...KNOWN_ADMIN_EMAILS, ...configuredAdmins];
+
+  if (email && allAdminEmails.includes(email.toLowerCase().trim())) {
+    return true;
+  }
+
+  if (token && uid) {
+    try {
+      const projectId =
+        process.env.VITE_FIREBASE_PROJECT_ID ||
+        process.env.FIREBASE_PROJECT_ID ||
+        DEFAULT_FIREBASE_PROJECT_ID;
+
+      const res = await fetch(
+        `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${encodeURIComponent(uid)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (res.ok) {
+        const doc = await res.json();
+        const role = doc.fields?.role?.stringValue;
+        if (role === 'admin') {
+          return true;
+        }
+      }
+    } catch (err) {
+      console.warn('Firestore admin check error:', err);
+    }
+  }
+
+  return false;
 }

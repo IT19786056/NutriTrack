@@ -6,7 +6,7 @@ import dotenv from "dotenv";
 import {
   extractBearerToken,
   verifyToken,
-  isAdminEmail,
+  isUserAdmin,
 } from "./server/firebaseAdmin";
 import {
   createRateLimitMiddleware,
@@ -63,9 +63,13 @@ async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextF
 
 // Admin Authorization Middleware
 async function requireAdmin(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  await requireAuth(req, res, () => {
-    if (!req.user || !isAdminEmail(req.user.email)) {
-      return res.status(403).json({ error: "Forbidden: Administrator access required." });
+  await requireAuth(req, res, async () => {
+    const token = extractBearerToken(req.headers.authorization);
+    const authorized = await isUserAdmin(token || '', req.user?.uid || '', req.user?.email);
+    if (!authorized) {
+      return res.status(403).json({
+        error: `Forbidden: Administrator access required. Signed in as: ${req.user?.email || 'unknown'}.`,
+      });
     }
     next();
   });
