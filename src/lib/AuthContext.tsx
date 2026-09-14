@@ -4,6 +4,7 @@ import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { UserProfile } from '../types';
 import { handleFirestoreError, OperationType } from './firestore-errors';
+import { toast } from 'sonner';
 
 interface AuthContextType {
   user: User | null;
@@ -39,19 +40,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsAuthReady(true);
       
       if (user) {
-        const userEmail = user.email?.toLowerCase();
-        const isPrimaryAdmin = userEmail === PRIMARY_ADMIN_EMAIL.toLowerCase();
+        const userEmail = user.email?.toLowerCase().trim();
+        const isPrimaryAdmin = userEmail === PRIMARY_ADMIN_EMAIL.toLowerCase().trim();
         
         // Check authorization
         let authorized = isPrimaryAdmin;
-        if (!authorized && userEmail) {
+        
+        // Always check invitation document for this user (even if admin)
+        if (userEmail) {
           try {
             const inviteDoc = await getDoc(doc(db, 'invitations', userEmail));
             if (inviteDoc.exists()) {
               authorized = true;
               // Update status to accepted if it was pending
               if (inviteDoc.data().status === 'pending') {
-                await setDoc(doc(db, 'invitations', userEmail), { status: 'accepted' }, { merge: true });
+                await setDoc(doc(db, 'invitations', userEmail), { 
+                  status: 'accepted',
+                  acceptedAt: new Date().toISOString()
+                }, { merge: true });
               }
             }
           } catch (error) {
@@ -75,7 +81,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 dailyCalorieGoal: 2000,
                 dailyWaterGoal: 2000,
                 createdAt: new Date().toISOString(),
-                role: 'user' // Explicitly set default role
+                role: isPrimaryAdmin ? 'admin' : 'user' // Explicitly set default role
               };
               await setDoc(userDocRef, newProfile);
               setProfile(newProfile);
@@ -100,11 +106,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribe();
   }, []);
 
+  // Separate effect for URL invitation feedback
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const invitedEmail = params.get('email')?.toLowerCase().trim();
+    const isAccepting = params.get('accept') === 'true';
+
+    if (user && invitedEmail && isAccepting) {
+      const currentUserEmail = user.email?.toLowerCase().trim();
+      if (currentUserEmail === invitedEmail) {
+        toast.success("Invitation accepted! Welcome to NutriTrack AI.");
+        const cleanUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+      } else {
+        toast.warning(`You are signed in as ${currentUserEmail}, but the invitation was sent to ${invitedEmail}.`);
+      }
+    }
+  }, [user]);
+
   // Separate effect for real-time invitation updates
   useEffect(() => {
     if (!user) return;
 
-    const userEmail = user.email?.toLowerCase();
+    const userEmail = user.email?.toLowerCase().trim();
     if (!userEmail) return;
 
     const inviteDocRef = doc(db, 'invitations', userEmail);
@@ -113,7 +138,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const data = docSnap.data();
         setIsAuthorized(true);
         if (data.status === 'pending') {
-          await setDoc(inviteDocRef, { status: 'accepted' }, { merge: true });
+          await setDoc(inviteDocRef, { 
+            status: 'accepted',
+            acceptedAt: new Date().toISOString()
+          }, { merge: true });
         }
       }
     }, (error) => {

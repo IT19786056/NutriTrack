@@ -38,12 +38,22 @@ export const AdminPanel: React.FC = () => {
   useEffect(() => {
     const qInv = query(collection(db, 'invitations'));
     const unsubInv = onSnapshot(qInv, (snapshot) => {
-      setInvitations(snapshot.docs.map(doc => doc.data() as Invitation));
+      setInvitations(snapshot.docs.map(doc => ({
+        email: doc.data().email || doc.id,
+        ...doc.data()
+      } as Invitation)));
+    }, (error) => {
+      console.error("Invitations snapshot error:", error);
     });
 
     const qUsers = query(collection(db, 'users'), orderBy('createdAt', 'desc'));
     const unsubUsers = onSnapshot(qUsers, (snapshot) => {
-      setUsers(snapshot.docs.map(doc => doc.data() as UserData));
+      setUsers(snapshot.docs.map(doc => ({
+        uid: doc.id,
+        ...doc.data()
+      } as UserData)));
+    }, (error) => {
+      console.error("Users snapshot error:", error);
     });
 
     return () => {
@@ -53,7 +63,7 @@ export const AdminPanel: React.FC = () => {
   }, []);
 
   const toggleAdmin = async (targetUser: UserData) => {
-    if (targetUser.email === 'ravindijason@gmail.com') {
+    if (targetUser.email?.toLowerCase() === 'ravindijason@gmail.com') {
       toast.error('Cannot modify primary admin role');
       return;
     }
@@ -79,10 +89,14 @@ export const AdminPanel: React.FC = () => {
 
     setIsInviting(true);
     try {
-      // 1. Send SMTP Email via Backend
+      // 1. Send SMTP Email via Backend with Authentication
+      const token = await user.getIdToken();
       const response = await fetch('/api/invite', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({ 
           email, 
           invitedBy: user.displayName || user.email 
@@ -323,7 +337,7 @@ export const AdminPanel: React.FC = () => {
                             size="sm" 
                             className="h-8 rounded-full text-xs"
                             onClick={() => toggleAdmin(u)}
-                            disabled={u.email === 'ravindijason@gmail.com'}
+                            disabled={u.email?.toLowerCase() === 'ravindijason@gmail.com'}
                           >
                             {u.role === 'admin' ? 'Revoke Admin' : 'Make Admin'}
                           </Button>
@@ -359,7 +373,7 @@ export const AdminPanel: React.FC = () => {
                         size="sm" 
                         className="h-7 rounded-full text-[10px] px-3"
                         onClick={() => toggleAdmin(u)}
-                        disabled={u.email === 'ravindijason@gmail.com'}
+                        disabled={u.email?.toLowerCase() === 'ravindijason@gmail.com'}
                       >
                         {u.role === 'admin' ? 'Revoke Admin' : 'Make Admin'}
                       </Button>

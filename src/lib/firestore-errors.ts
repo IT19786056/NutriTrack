@@ -29,24 +29,13 @@ export interface FirestoreErrorInfo {
 }
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData.map(provider => ({
-        providerId: provider.providerId,
-        displayName: provider.displayName,
-        email: provider.email,
-        photoUrl: provider.photoURL
-      })) || []
-    },
-    operationType,
-    path
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  
+  if (import.meta.env.DEV) {
+    console.error(`[Firestore ${operationType}] Error at ${path}:`, errorMessage);
+  } else {
+    console.error(`[Firestore ${operationType}] Operation failed.`);
   }
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+
+  throw new Error(`Unable to complete ${operationType} operation. Please check your connection and permissions.`);
 }

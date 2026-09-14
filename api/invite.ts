@@ -1,16 +1,55 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import nodemailer from 'nodemailer';
+import { extractBearerToken, verifyToken, isAdminEmail } from '../server/firebaseAdmin';
+import { applyVercelRateLimit } from '../server/rateLimiter';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { email, invitedBy } = req.body;
+  // Rate Limiting (15 invites per 15 minutes)
+  const allowed = applyVercelRateLimit(req, res, {
+    limit: 15,
+    windowMs: 15 * 60 * 1000,
+    keyPrefix: 'invite-vercel',
+  });
+  if (!allowed) return;
 
-  if (!email) {
-    return res.status(400).json({ error: 'Email is required' });
+  // Authentication & Authorization check
+  const token = extractBearerToken(req.headers.authorization);
+  if (!token) {
+    return res.status(401).json({ error: 'Unauthorized: Missing authentication token.' });
   }
+
+  let callerEmail: string | undefined;
+  try {
+    const decoded = await verifyToken(token);
+    callerEmail = decoded.email;
+    if (!isAdminEmail(callerEmail)) {
+      return res.status(403).json({ error: 'Forbidden: Administrator access required.' });
+    }
+  } catch (err: any) {
+    return res.status(401).json({ error: 'Unauthorized: Invalid or expired authentication token.' });
+  }
+
+  const { email, invitedBy } = req.body || {};
+
+  if (!email || typeof email !== 'string') {
+    return res.status(400).json({ error: 'Valid email is required' });
+  }
+
+  const cleanEmail = email.toLowerCase().trim();
+  const escapeHtml = (str: string) =>
+    String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+
+  const safeInvitedBy = escapeHtml(invitedBy || callerEmail || 'An Administrator');
+  const safeEmail = escapeHtml(cleanEmail);
 
   const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
@@ -22,21 +61,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     },
   });
 
-  const inviteLink = `${process.env.APP_URL || 'http://localhost:3000'}`;
+  const baseUrl = process.env.APP_URL || 'http://localhost:3000';
+  const inviteLink = `${baseUrl}?email=${encodeURIComponent(cleanEmail)}&accept=true`;
 
   try {
     await transporter.sendMail({
       from: process.env.SMTP_FROM || `"NutriTrack AI" <${process.env.SMTP_USER}>`,
-      to: email,
+      to: cleanEmail,
       subject: "You've been invited to NutriTrack AI",
       html: `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
           <h2 style="color: #1a1a1a;">Welcome to NutriTrack AI</h2>
           <p>Hello,</p>
-          <p><strong>${invitedBy}</strong> has invited you to join NutriTrack AI, your intelligent health companion.</p>
-          <p>To get started, click the button below and sign in with your Google account (${email}).</p>
+          <p><strong>${safeInvitedBy}</strong> has invited you to join NutriTrack AI, your intelligent health companion.</p>
+          <p>To get started, click the button below and sign in with your Google account (${safeEmail}).</p>
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${inviteLink}" style="background-color: #1a1a1a; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold;">Accept Invitation</a>
+            <a href="${inviteLink}" style="background-color: #1a1a1a; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Accept Invitation</a>
           </div>
           <p style="color: #666; font-size: 12px;">If you weren't expecting this invitation, you can safely ignore this email.</p>
         </div>

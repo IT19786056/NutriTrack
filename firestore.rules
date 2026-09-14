@@ -60,7 +60,7 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() &&
         (
-          request.auth.token.email == "ravindijason@gmail.com" ||
+          request.auth.token.email.lower() == "ravindijason@gmail.com" ||
           (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
         );
@@ -82,9 +82,19 @@ service cloud.firestore {
     // Domain Validators
     // ===============================================================
 
-    function isValidUser(data) {
+    function isValidUserCreate(data) {
       return data.uid == request.auth.uid &&
              isValidEmail(data.email) &&
+             (!('role' in data) || data.role == 'user' || isAdmin()) &&
+             (!('dailyCalorieGoal' in data) || data.dailyCalorieGoal is number) &&
+             (!('dailyWaterGoal' in data) || data.dailyWaterGoal is number) &&
+             (!('createdAt' in data) || isValidDateString(data.createdAt));
+    }
+
+    function isValidUserUpdate(data, prev) {
+      return data.uid == prev.uid &&
+             data.email == prev.email &&
+             (isAdmin() || !('role' in data) || data.role == prev.role) &&
              (!('dailyCalorieGoal' in data) || data.dailyCalorieGoal is number) &&
              (!('dailyWaterGoal' in data) || data.dailyWaterGoal is number) &&
              (!('createdAt' in data) || isValidDateString(data.createdAt));
@@ -132,8 +142,8 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
-      allow create: if isOwner(userId) && isValidUser(request.resource.data);
-      allow update: if isOwner(userId) && isValidUser(request.resource.data);
+      allow create: if isOwner(userId) && isValidUserCreate(request.resource.data);
+      allow update: if (isOwner(userId) && isValidUserUpdate(request.resource.data, resource.data)) || isAdmin();
       allow delete: if isAdmin();
 
       match /foodLogs/{logId} {

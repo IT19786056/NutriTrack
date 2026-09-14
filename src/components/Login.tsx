@@ -2,9 +2,20 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import { signInWithGoogle } from '@/src/lib/firebase';
 import { motion } from 'motion/react';
-import { Flame, Utensils, Dumbbell, Droplets } from 'lucide-react';
+import { Flame, Utensils, Dumbbell, Droplets, MailCheck } from 'lucide-react';
 
 export const Login: React.FC = () => {
+  const [invitedEmail, setInvitedEmail] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const email = params.get('email');
+      if (email && params.get('accept') === 'true') {
+        setInvitedEmail(email.toLowerCase().trim());
+      }
+    }
+  }, []);
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-background overflow-hidden relative">
       {/* Background Decorative Elements */}
@@ -29,6 +40,18 @@ export const Login: React.FC = () => {
             Your intelligent companion for a healthier lifestyle. Track calories, workouts, and hydration with ease.
           </p>
         </div>
+
+        {invitedEmail && (
+          <div className="p-4 rounded-2xl bg-primary/10 border border-primary/20 text-left flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+            <MailCheck className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+            <div className="text-xs space-y-1">
+              <p className="font-semibold text-foreground">You've been invited!</p>
+              <p className="text-muted-foreground">
+                Sign in with <span className="font-medium text-foreground">{invitedEmail}</span> to accept your invitation and access NutriTrack AI.
+              </p>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-4 py-8">
           {[
