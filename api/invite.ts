@@ -1,7 +1,121 @@
-import { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import nodemailer from 'nodemailer';
-import { extractBearerToken, verifyToken, isAdminEmail } from './_lib/auth';
-import { applyVercelRateLimit } from './_lib/rateLimiter';
+import crypto from 'crypto';
+
+const DEFAULT_FIREBASE_PROJECT_ID = 'calorieapp-caca8';
+const DEFAULT_ADMIN_EMAIL = 'ravindijason@gmail.com';
+
+// Cache for Google's public certificates
+let cachedCertificates: Record<string, string> | null = null;
+let certsExpiryTime = 0;
+
+async function getGooglePublicKeys(): Promise<Record<string, string>> {
+  const now = Date.now();
+  if (cachedCertificates && now < certsExpiryTime) {
+    return cachedCertificates;
+  }
+
+  const response = await fetch(
+    'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com'
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch Google public certs (HTTP ${response.status})`);
+  }
+
+  const cacheControl = response.headers.get('cache-control') || '';
+  const match = cacheControl.match(/max-age=(\d+)/);
+  const maxAgeSeconds = match ? parseInt(match[1], 10) : 21600;
+
+  cachedCertificates = (await response.json()) as Record<string, string>;
+  certsExpiryTime = now + maxAgeSeconds * 1000;
+  return cachedCertificates;
+}
+
+async function verifyFirebaseToken(idToken: string): Promise<{ email?: string; [key: string]: any }> {
+  if (!idToken || typeof idToken !== 'string') {
+    throw new Error('Authentication token is missing.');
+  }
+
+  const parts = idToken.split('.');
+  if (parts.length !== 3) {
+    throw new Error('Invalid JWT format (expected 3 parts).');
+  }
+
+  const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+  const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+
+  if (header.alg !== 'RS256') {
+    throw new Error(`Unsupported token algorithm: ${header.alg}. Expected RS256.`);
+  }
+
+  if (!header.kid) {
+    throw new Error('Token header is missing key ID (kid).');
+  }
+
+  const certs = await getGooglePublicKeys();
+  const cert = certs[header.kid];
+  if (!cert) {
+    throw new Error(`Public key not found for kid: ${header.kid}`);
+  }
+
+  const signature = Buffer.from(parts[2], 'base64url');
+  const verifier = crypto.createVerify('RSA-SHA256');
+  verifier.update(`${parts[0]}.${parts[1]}`);
+
+  if (!verifier.verify(cert, signature)) {
+    throw new Error('Invalid token cryptographic signature.');
+  }
+
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  if (payload.exp && payload.exp < nowSeconds) {
+    throw new Error('Authentication token has expired.');
+  }
+
+  const projectId =
+    process.env.VITE_FIREBASE_PROJECT_ID ||
+    process.env.FIREBASE_PROJECT_ID ||
+    DEFAULT_FIREBASE_PROJECT_ID;
+  const expectedIssuer = `https://securetoken.google.com/${projectId}`;
+
+  if (payload.iss !== expectedIssuer) {
+    throw new Error(`Invalid token issuer. Expected ${expectedIssuer}, got ${payload.iss}`);
+  }
+
+  if (payload.aud !== projectId) {
+    throw new Error(`Invalid token audience. Expected ${projectId}, got ${payload.aud}`);
+  }
+
+  return payload;
+}
+
+// In-memory rate limiting (serverless-friendly)
+interface RateLimitEntry {
+  count: number;
+  resetTime: number;
+}
+const rateLimitStore = new Map<string, RateLimitEntry>();
+let lastCleanup = Date.now();
+
+function checkRateLimit(key: string, limit: number, windowMs: number): boolean {
+  const now = Date.now();
+  if (now - lastCleanup > 60000) {
+    lastCleanup = now;
+    for (const [k, entry] of rateLimitStore.entries()) {
+      if (entry.resetTime <= now) rateLimitStore.delete(k);
+    }
+  }
+
+  const entry = rateLimitStore.get(key);
+  if (!entry || entry.resetTime <= now) {
+    rateLimitStore.set(key, { count: 1, resetTime: now + windowMs });
+    return true;
+  }
+
+  if (entry.count >= limit) return false;
+  entry.count += 1;
+  return true;
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
@@ -10,24 +124,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Rate Limiting (15 invites per 15 minutes)
-    const allowed = applyVercelRateLimit(req, res, {
-      limit: 15,
-      windowMs: 15 * 60 * 1000,
-      keyPrefix: 'invite-vercel',
-    });
-    if (!allowed) return;
+    const ip =
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() ||
+      req.socket?.remoteAddress ||
+      'unknown';
+    if (!checkRateLimit(`invite:${ip}`, 15, 15 * 60 * 1000)) {
+      return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+    }
 
     // Authentication & Authorization check
-    const token = extractBearerToken(req.headers.authorization);
-    if (!token) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({ error: 'Unauthorized: Missing authentication token.' });
     }
+    const token = authHeader.slice(7).trim();
 
     let callerEmail: string | undefined;
     try {
-      const decoded = await verifyToken(token);
+      const decoded = await verifyFirebaseToken(token);
       callerEmail = decoded.email;
-      if (!isAdminEmail(callerEmail)) {
+      const configuredAdmin = (process.env.ADMIN_EMAIL || DEFAULT_ADMIN_EMAIL).toLowerCase().trim();
+      if (!callerEmail || callerEmail.toLowerCase().trim() !== configuredAdmin) {
         return res.status(403).json({ error: 'Forbidden: Administrator access required.' });
       }
     } catch (err: any) {
@@ -56,7 +173,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const safeEmail = escapeHtml(cleanEmail);
 
     if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-      console.error('SMTP credentials missing in environment variables');
       return res.status(500).json({
         error: 'SMTP credentials not configured in Vercel environment variables (SMTP_USER, SMTP_PASS).',
       });
