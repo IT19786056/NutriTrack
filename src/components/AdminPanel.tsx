@@ -104,8 +104,15 @@ export const AdminPanel: React.FC = () => {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to send email');
+        let errorMsg = 'Failed to send email';
+        try {
+          const error = await response.json();
+          errorMsg = error.error || errorMsg;
+        } catch {
+          const rawText = await response.text().catch(() => '');
+          errorMsg = rawText.slice(0, 200) || `Server error (${response.status})`;
+        }
+        throw new Error(errorMsg);
       }
 
       // 2. Add to Firestore Whitelist

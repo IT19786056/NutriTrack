@@ -13,7 +13,7 @@ export function checkRateLimit(
 ): { allowed: boolean; remaining: number; resetTime: number } {
   const now = Date.now();
 
-  // Passive cleanup every 60 seconds
+  // Passive cleanup every 60 seconds (safe for serverless runtimes)
   if (now - lastCleanup > 60 * 1000) {
     lastCleanup = now;
     for (const [k, entry] of rateLimitStore.entries()) {
@@ -38,30 +38,34 @@ export function checkRateLimit(
   return { allowed: true, remaining: limit - entry.count, resetTime: entry.resetTime };
 }
 
-export function createRateLimitMiddleware(options: {
-  limit: number;
-  windowMs: number;
-  keyPrefix?: string;
-}) {
-  return (req: any, res: any, next: any) => {
+export function applyVercelRateLimit(
+  req: any,
+  res: any,
+  options: { limit: number; windowMs: number; keyPrefix?: string }
+): boolean {
+  try {
     const ip =
-      req.headers['x-forwarded-for']?.toString().split(',')[0].trim() ||
-      req.ip ||
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() ||
       req.socket?.remoteAddress ||
       'unknown';
     const key = `${options.keyPrefix || 'rl'}:${ip}`;
     const result = checkRateLimit(key, options.limit, options.windowMs);
 
-    res.setHeader('X-RateLimit-Limit', options.limit);
-    res.setHeader('X-RateLimit-Remaining', result.remaining);
-    res.setHeader('X-RateLimit-Reset', Math.ceil(result.resetTime / 1000));
-
-    if (!result.allowed) {
-      return res.status(429).json({
-        error: 'Too many requests. Please try again later.',
-      });
+    if (typeof res.setHeader === 'function') {
+      res.setHeader('X-RateLimit-Limit', String(options.limit));
+      res.setHeader('X-RateLimit-Remaining', String(result.remaining));
+      res.setHeader('X-RateLimit-Reset', String(Math.ceil(result.resetTime / 1000)));
     }
 
-    next();
-  };
+    if (!result.allowed) {
+      res.status(429).json({
+        error: 'Too many requests. Please try again later.',
+      });
+      return false;
+    }
+  } catch (err) {
+    console.warn('Rate limiter check error, proceeding:', err);
+  }
+
+  return true;
 }

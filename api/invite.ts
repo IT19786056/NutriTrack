@@ -1,70 +1,80 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import nodemailer from 'nodemailer';
-import { extractBearerToken, verifyToken, isAdminEmail } from '../server/firebaseAdmin';
-import { applyVercelRateLimit } from '../server/rateLimiter';
+import { extractBearerToken, verifyToken, isAdminEmail } from './_lib/auth';
+import { applyVercelRateLimit } from './_lib/rateLimiter';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  // Rate Limiting (15 invites per 15 minutes)
-  const allowed = applyVercelRateLimit(req, res, {
-    limit: 15,
-    windowMs: 15 * 60 * 1000,
-    keyPrefix: 'invite-vercel',
-  });
-  if (!allowed) return;
-
-  // Authentication & Authorization check
-  const token = extractBearerToken(req.headers.authorization);
-  if (!token) {
-    return res.status(401).json({ error: 'Unauthorized: Missing authentication token.' });
-  }
-
-  let callerEmail: string | undefined;
   try {
-    const decoded = await verifyToken(token);
-    callerEmail = decoded.email;
-    if (!isAdminEmail(callerEmail)) {
-      return res.status(403).json({ error: 'Forbidden: Administrator access required.' });
+    if (req.method !== 'POST') {
+      return res.status(405).json({ error: 'Method not allowed' });
     }
-  } catch (err: any) {
-    return res.status(401).json({ error: 'Unauthorized: Invalid or expired authentication token.' });
-  }
 
-  const { email, invitedBy } = req.body || {};
+    // Rate Limiting (15 invites per 15 minutes)
+    const allowed = applyVercelRateLimit(req, res, {
+      limit: 15,
+      windowMs: 15 * 60 * 1000,
+      keyPrefix: 'invite-vercel',
+    });
+    if (!allowed) return;
 
-  if (!email || typeof email !== 'string') {
-    return res.status(400).json({ error: 'Valid email is required' });
-  }
+    // Authentication & Authorization check
+    const token = extractBearerToken(req.headers.authorization);
+    if (!token) {
+      return res.status(401).json({ error: 'Unauthorized: Missing authentication token.' });
+    }
 
-  const cleanEmail = email.toLowerCase().trim();
-  const escapeHtml = (str: string) =>
-    String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
+    let callerEmail: string | undefined;
+    try {
+      const decoded = await verifyToken(token);
+      callerEmail = decoded.email;
+      if (!isAdminEmail(callerEmail)) {
+        return res.status(403).json({ error: 'Forbidden: Administrator access required.' });
+      }
+    } catch (err: any) {
+      console.error('Token verification error:', err.message || err);
+      return res.status(401).json({
+        error: `Unauthorized: ${err.message || 'Invalid or expired authentication token.'}`,
+      });
+    }
 
-  const safeInvitedBy = escapeHtml(invitedBy || callerEmail || 'An Administrator');
-  const safeEmail = escapeHtml(cleanEmail);
+    const { email, invitedBy } = req.body || {};
 
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT) || 587,
-    secure: process.env.SMTP_PORT === '465',
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-  });
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ error: 'Valid email is required' });
+    }
 
-  const baseUrl = process.env.APP_URL || 'http://localhost:3000';
-  const inviteLink = `${baseUrl}?email=${encodeURIComponent(cleanEmail)}&accept=true`;
+    const cleanEmail = email.toLowerCase().trim();
+    const escapeHtml = (str: string) =>
+      String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
 
-  try {
+    const safeInvitedBy = escapeHtml(invitedBy || callerEmail || 'An Administrator');
+    const safeEmail = escapeHtml(cleanEmail);
+
+    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+      console.error('SMTP credentials missing in environment variables');
+      return res.status(500).json({
+        error: 'SMTP credentials not configured in Vercel environment variables (SMTP_USER, SMTP_PASS).',
+      });
+    }
+
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: Number(process.env.SMTP_PORT) || 587,
+      secure: process.env.SMTP_PORT === '465',
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    });
+
+    const baseUrl = process.env.APP_URL || 'https://nutri-track-xi-ten.vercel.app';
+    const inviteLink = `${baseUrl}?email=${encodeURIComponent(cleanEmail)}&accept=true`;
+
     await transporter.sendMail({
       from: process.env.SMTP_FROM || `"NutriTrack AI" <${process.env.SMTP_USER}>`,
       to: cleanEmail,
@@ -84,8 +94,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     return res.status(200).json({ success: true });
-  } catch (error) {
-    console.error('SMTP Error:', error);
-    return res.status(500).json({ error: 'Failed to send email. Check SMTP configuration.' });
+  } catch (error: any) {
+    console.error('Fatal invite handler error:', error);
+    return res.status(500).json({
+      error: error.message || 'An unexpected error occurred while sending invitation.',
+    });
   }
 }
