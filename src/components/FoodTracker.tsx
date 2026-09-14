@@ -7,13 +7,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Camera, Upload, Loader2, Plus, Utensils, Info, Sparkles, Trash2, History, X, RefreshCw } from 'lucide-react';
+import { Camera, Upload, Loader2, Plus, Utensils, Info, Sparkles, Trash2, History, X, RefreshCw, Zap, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { handleFirestoreError, OperationType } from '@/src/lib/firestore-errors';
 import { resizeImage } from '@/src/lib/image-utils';
 import { FoodLog, FoodItem } from '@/src/types';
+import { motion } from 'motion/react';
+import confetti from 'canvas-confetti';
 
 export const FoodTracker: React.FC = () => {
   const { user } = useAuth();
@@ -74,7 +76,7 @@ export const FoodTracker: React.FC = () => {
         fats: result.fats.toString(),
         items: result.items || []
       });
-      toast.success(`Found nutritional facts for ${manualFood.name}`);
+      toast.success(`Found nutritional telemetry for ${manualFood.name}`);
     } catch (error) {
       console.error('Failed to fetch nutrition:', error);
       toast.error('Could not find nutritional facts. Please enter manually.');
@@ -112,7 +114,7 @@ export const FoodTracker: React.FC = () => {
           items: result.items
         });
       }
-      toast.success('Nutrition updated based on items');
+      toast.success('Telemetry recalibrated based on portion items');
     } catch (error) {
       console.error('Recalculation failed:', error);
       toast.error('Failed to recalculate nutrition');
@@ -129,10 +131,8 @@ export const FoodTracker: React.FC = () => {
     reader.onloadend = async () => {
       setIsAnalyzing(true);
       try {
-        // Resize image to keep it under Firestore/Gemini limits
         const resized = await resizeImage(reader.result as string);
         const base64Data = resized.split(',')[1];
-        
         setCapturedImage(resized);
         
         const result = await analyzeFoodImage(base64Data);
@@ -155,7 +155,6 @@ export const FoodTracker: React.FC = () => {
     try {
       if (capturedImage) {
         const sizeInBytes = Math.round((capturedImage.length * 3) / 4);
-        console.log(`Saving food log with image. Size: ${(sizeInBytes / 1024).toFixed(2)} KB`);
         if (sizeInBytes > 1000000) {
           throw new Error('Image is too large to save (max 1MB). Please try a smaller photo.');
         }
@@ -173,7 +172,15 @@ export const FoodTracker: React.FC = () => {
         imageUrl: capturedImage || null,
         items: food.items || []
       });
-      toast.success(`${food.name} logged successfully!`);
+
+      confetti({
+        particleCount: 80,
+        spread: 65,
+        origin: { y: 0.6 },
+        colors: ['#CCFF00', '#00F5FF', '#FF3B30', '#FFFFFF']
+      });
+
+      toast.success(`${food.name} logged successfully!`, { icon: '🥗' });
       setIsManualOpen(false);
       setIsAiResultOpen(false);
       setAiResult(null);
@@ -189,7 +196,7 @@ export const FoodTracker: React.FC = () => {
     const path = `users/${user.uid}/foodLogs/${id}`;
     try {
       await deleteDoc(doc(db, path));
-      toast.success('Log deleted');
+      toast.success('Food log removed');
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, path);
     }
@@ -235,24 +242,49 @@ export const FoodTracker: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Nutrition</h2>
-          <p className="text-muted-foreground">Log your meals and track your macros.</p>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-mono text-[#CCFF00] uppercase tracking-widest font-bold">NUTRITIONAL INTELLIGENCE</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-[#CCFF00] animate-pulse" />
+          </div>
+          <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white mt-0.5">Macro Fueling</h2>
+          <p className="text-xs sm:text-sm text-zinc-400">AI optical food recognition & precise macronutrient logging.</p>
         </div>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* AI Tracker Card */}
-        <Card className="relative overflow-hidden border-2 border-dashed border-primary/20 bg-primary/5 hover:bg-primary/10 transition-colors cursor-pointer" onClick={() => fileInputRef.current?.click()}>
-          <CardHeader className="text-center">
-            <div className="mx-auto w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center mb-2">
-              <Camera className="w-6 h-6 text-primary" />
+      {/* Grid: AI Viewfinder Card & Manual Entry Card */}
+      <div className="grid gap-4 md:grid-cols-2">
+        {/* Futuristic AI Viewfinder Card */}
+        <Card 
+          className="relative overflow-hidden rounded-3xl border border-[#CCFF00]/40 bg-zinc-950/90 shadow-[0_0_30px_rgba(204,255,0,0.12)] cursor-pointer group" 
+          onClick={() => fileInputRef.current?.click()}
+        >
+          {/* Viewfinder Reticle Brackets */}
+          <div className="absolute top-3 left-3 text-[10px] font-mono text-[#CCFF00]/70 font-bold pointer-events-none">
+            [AI_NEURAL_CAM]
+          </div>
+          <div className="absolute top-3 right-3 text-[10px] font-mono text-zinc-500 pointer-events-none">
+            READY
+          </div>
+
+          <CardHeader className="text-center pt-8 pb-4">
+            <div className="mx-auto w-16 h-16 rounded-2xl bg-[#CCFF00]/15 border border-[#CCFF00]/40 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform shadow-[0_0_20px_rgba(204,255,0,0.25)]">
+              <Camera className="w-8 h-8 text-[#CCFF00]" />
             </div>
-            <CardTitle>AI Food Recognition</CardTitle>
-            <CardDescription>Snap a photo of your meal to automatically estimate calories and macros.</CardDescription>
+            <CardTitle className="text-lg font-black text-white uppercase tracking-wide">AI Optical Recognition</CardTitle>
+            <CardDescription className="text-xs text-zinc-400 max-w-sm mx-auto">
+              Snap or upload a photo of your meal. Gemini will automatically break down calories and macros.
+            </CardDescription>
           </CardHeader>
-          <CardContent className="flex justify-center pb-8">
+
+          {/* Laser Scanning Animation Bar */}
+          <div className="relative h-1 bg-zinc-900 mx-6 rounded overflow-hidden">
+            <div className="w-32 h-full bg-gradient-to-r from-transparent via-[#CCFF00] to-transparent animate-pulse" />
+          </div>
+
+          <CardContent className="flex justify-center pb-7 pt-4">
             <input 
               type="file" 
               accept="image/*" 
@@ -262,33 +294,44 @@ export const FoodTracker: React.FC = () => {
               onChange={handleImageUpload}
               disabled={isAnalyzing}
             />
-            <Button disabled={isAnalyzing} className="rounded-full px-8">
+            <Button 
+              disabled={isAnalyzing} 
+              className="rounded-2xl px-7 h-10 bg-[#CCFF00] text-black hover:bg-[#b8e600] font-black text-xs shadow-[0_0_20px_rgba(204,255,0,0.35)] active:scale-95 transition-all"
+            >
               {isAnalyzing ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Analyzing...
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin stroke-[3]" />
+                  Optical Analysis in Progress...
                 </>
               ) : (
                 <>
-                  <Camera className="mr-2 h-4 w-4" />
-                  Take Photo
+                  <Camera className="mr-2 h-4 w-4 stroke-[2.5]" />
+                  Scan Meal Photo
                 </>
               )}
             </Button>
           </CardContent>
         </Card>
 
-        {/* Manual Tracker Card */}
-        <Card className="border-2 border-dashed border-muted bg-muted/5 hover:bg-muted/10 transition-colors cursor-pointer" onClick={() => setIsManualOpen(true)}>
-          <CardHeader className="text-center">
-            <div className="mx-auto w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-2">
-              <Plus className="w-6 h-6 text-muted-foreground" />
+        {/* Tactical Manual Entry Card */}
+        <Card 
+          className="rounded-3xl border-zinc-800 bg-zinc-900/80 hover:border-zinc-700 transition-all cursor-pointer group shadow-xl flex flex-col justify-between"
+          onClick={() => setIsManualOpen(true)}
+        >
+          <CardHeader className="text-center pt-8 pb-4">
+            <div className="mx-auto w-16 h-16 rounded-2xl bg-zinc-800 border border-zinc-700 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
+              <Plus className="w-8 h-8 text-white" />
             </div>
-            <CardTitle>Manual Entry</CardTitle>
-            <CardDescription>Enter food details manually if you know the exact nutritional facts.</CardDescription>
+            <CardTitle className="text-lg font-black text-white uppercase tracking-wide">Manual Food Input</CardTitle>
+            <CardDescription className="text-xs text-zinc-400 max-w-sm mx-auto">
+              Know your exact calories and macro grams? Enter them manually with optional AI nutritional lookups.
+            </CardDescription>
           </CardHeader>
-          <CardContent className="flex justify-center pb-8">
-            <Button variant="outline" className="rounded-full px-8">
+          <CardContent className="flex justify-center pb-7 pt-4">
+            <Button 
+              variant="outline" 
+              className="rounded-2xl px-7 h-10 border-zinc-700 text-zinc-200 hover:bg-zinc-800 font-extrabold text-xs active:scale-95 transition-all"
+            >
               <Plus className="mr-2 h-4 w-4" />
               Add Manually
             </Button>
@@ -296,45 +339,76 @@ export const FoodTracker: React.FC = () => {
         </Card>
       </div>
 
-      {/* Recent Logs List */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <History className="w-5 h-5" />
-            Recent Logs
-          </CardTitle>
-          <CardDescription>Your recently logged meals and snacks.</CardDescription>
+      {/* Recent Meal Telemetry History */}
+      <Card className="rounded-3xl border-zinc-800 bg-zinc-950/80 backdrop-blur-xl shadow-2xl overflow-hidden">
+        <CardHeader className="border-b border-zinc-800/80 pb-4">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-black uppercase tracking-wider text-white flex items-center gap-2">
+              <History className="w-4 h-4 text-[#CCFF00]" />
+              Recent Meal Telemetry
+            </CardTitle>
+            <span className="text-xs font-mono text-zinc-400">{foodLogs.length} total entries</span>
+          </div>
+          <CardDescription className="text-xs text-zinc-400">Recently logged meals, snacks, and macro breakdowns</CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
+        <CardContent className="pt-4">
+          <div className="space-y-3">
             {foodLogs.length === 0 ? (
-              <p className="text-center text-muted-foreground py-4">No logs yet today.</p>
+              <div className="text-center py-12 text-zinc-500">
+                <Utensils className="w-12 h-12 mx-auto mb-3 opacity-20 text-[#CCFF00]" />
+                <p className="text-sm font-bold text-zinc-400">No meals logged yet today.</p>
+                <p className="text-xs text-zinc-500 mt-1">Scan a meal using the AI camera above to get started.</p>
+              </div>
             ) : (
               foodLogs.map((log) => (
-                <div key={log.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border group">
-                  <div className="flex items-center gap-3">
+                <div 
+                  key={log.id} 
+                  className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl bg-zinc-900/80 border border-zinc-800/90 hover:border-zinc-700 transition-all gap-3 group"
+                >
+                  <div className="flex items-center gap-3.5">
                     {log.imageUrl ? (
-                      <img src={log.imageUrl} alt={log.name} className="w-12 h-12 rounded-md object-cover" referrerPolicy="no-referrer" />
+                      <img src={log.imageUrl} alt={log.name} className="w-14 h-14 rounded-xl object-cover border border-zinc-700 shrink-0" referrerPolicy="no-referrer" />
                     ) : (
-                      <div className="w-12 h-12 rounded-md bg-muted flex items-center justify-center">
-                        <Utensils className="w-6 h-6 text-muted-foreground" />
+                      <div className="w-14 h-14 rounded-xl bg-zinc-800/80 border border-zinc-700/80 flex items-center justify-center shrink-0">
+                        <Utensils className="w-6 h-6 text-zinc-400" />
                       </div>
                     )}
                     <div>
-                      <h4 className="font-medium">{log.name}</h4>
-                      <p className="text-xs text-muted-foreground">
-                        {log.mealType.charAt(0).toUpperCase() + log.mealType.slice(1)} • {log.calories} kcal
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-black text-sm text-white">{log.name}</h4>
+                        <span className="text-[9px] font-mono font-bold uppercase px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700">
+                          {log.mealType}
+                        </span>
+                      </div>
+
+                      {/* Macro Pill Chips */}
+                      <div className="flex items-center gap-2 text-[10px] mt-1.5 font-mono">
+                        <span className="px-2 py-0.5 rounded-md bg-blue-500/15 border border-blue-500/30 text-blue-400 font-bold">
+                          P: {log.protein || 0}g
+                        </span>
+                        <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-bold">
+                          C: {log.carbs || 0}g
+                        </span>
+                        <span className="px-2 py-0.5 rounded-md bg-orange-500/15 border border-orange-500/30 text-orange-400 font-bold">
+                          F: {log.fats || 0}g
+                        </span>
+                      </div>
                     </div>
                   </div>
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    className="opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive hover:bg-destructive/10 transition-opacity"
-                    onClick={() => log.id && deleteLog(log.id)}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
+
+                  <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-zinc-800/80">
+                    <span className="text-sm font-black text-[#CCFF00]">
+                      {log.calories} kcal
+                    </span>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="opacity-60 group-hover:opacity-100 text-red-400 hover:text-red-300 hover:bg-red-500/10 h-8 w-8 rounded-lg transition-all"
+                      onClick={() => log.id && deleteLog(log.id)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
               ))
             )}
@@ -344,33 +418,41 @@ export const FoodTracker: React.FC = () => {
 
       {/* AI Result Dialog */}
       <Dialog open={isAiResultOpen} onOpenChange={setIsAiResultOpen}>
-        <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto rounded-3xl bg-zinc-950 border-zinc-800 text-zinc-100 p-6 shadow-2xl">
           <DialogHeader>
-            <DialogTitle>AI Analysis Result</DialogTitle>
-            <DialogDescription>
-              We've estimated the nutritional content of your meal.
+            <DialogTitle className="text-lg font-black tracking-tight text-white flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-[#CCFF00]" />
+              AI Optical Breakdown
+            </DialogTitle>
+            <DialogDescription className="text-xs text-zinc-400">
+              Estimated caloric and macronutrient telemetry from your image.
             </DialogDescription>
           </DialogHeader>
+
           {aiResult && (
-            <div className="space-y-6 py-4">
+            <div className="space-y-5 py-3">
               {capturedImage && (
-                <div className="relative aspect-video rounded-lg overflow-hidden border">
-                  <img src={capturedImage} alt="Captured food" className="object-cover w-full h-full" referrerPolicy="no-referrer" />
+                <div className="relative aspect-video rounded-2xl overflow-hidden border border-zinc-800 shadow-md">
+                  <img src={capturedImage} alt="Captured meal" className="object-cover w-full h-full" referrerPolicy="no-referrer" />
                 </div>
               )}
               
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Food Item</Label>
-                  <Input value={aiResult.name} onChange={(e) => setAiResult({...aiResult, name: e.target.value})} />
+                  <Label className="text-xs font-bold text-zinc-300">Identified Dish</Label>
+                  <Input 
+                    value={aiResult.name} 
+                    onChange={(e) => setAiResult({...aiResult, name: e.target.value})}
+                    className="rounded-xl bg-zinc-900 border-zinc-800 text-white text-xs"
+                  />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Meal Type</Label>
+                  <Label className="text-xs font-bold text-zinc-300">Meal Window</Label>
                   <Select onValueChange={(v: any) => setAiResult({...aiResult, mealType: v})} defaultValue="lunch">
-                    <SelectTrigger>
+                    <SelectTrigger className="rounded-xl bg-zinc-900 border-zinc-800 text-white text-xs">
                       <SelectValue placeholder="Select meal" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="bg-zinc-900 border-zinc-800 text-white">
                       <SelectItem value="breakfast">Breakfast</SelectItem>
                       <SelectItem value="lunch">Lunch</SelectItem>
                       <SelectItem value="dinner">Dinner</SelectItem>
@@ -381,180 +463,145 @@ export const FoodTracker: React.FC = () => {
               </div>
 
               {/* Items Section */}
-              <div className="space-y-3">
+              <div className="space-y-2.5">
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm font-bold">Food Items / Components</Label>
+                  <Label className="text-xs font-black uppercase tracking-wider text-zinc-300">Components & Portions</Label>
                   <Button 
                     variant="outline" 
                     size="sm" 
-                    className="h-7 text-xs gap-1"
+                    className="h-7 text-[11px] gap-1 rounded-lg border-zinc-700 bg-zinc-900 text-[#CCFF00]"
                     onClick={() => handleRecalculate(true)}
                     disabled={isRecalculating}
                   >
                     {isRecalculating ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                    Recalculate Nutrition
+                    Recalibrate
                   </Button>
                 </div>
-                <div className="space-y-2 p-3 rounded-lg border bg-muted/30">
+                <div className="space-y-2 p-3 rounded-2xl border border-zinc-800 bg-zinc-900/60">
                   {aiResult.items.map((item, idx) => (
-                    <div key={idx} className="flex items-center gap-2 bg-background border rounded-lg p-2 text-xs">
-                      <span className="font-medium flex-1">{item.name}</span>
+                    <div key={idx} className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 rounded-xl p-2 text-xs">
+                      <span className="font-bold flex-1 text-white">{item.name}</span>
                       <Input 
-                        className="w-24 h-7 text-[10px]" 
+                        className="w-24 h-7 text-[11px] rounded-lg bg-zinc-900 border-zinc-800 text-white" 
                         value={item.portion} 
                         onChange={(e) => updateItemPortion(true, idx, e.target.value)}
-                        placeholder="Portion (e.g. 1 cup)"
+                        placeholder="Portion"
                       />
-                      <button onClick={() => removeItem(true, idx)} className="hover:text-destructive p-1">
-                        <X className="w-3 h-3" />
+                      <button onClick={() => removeItem(true, idx)} className="hover:text-red-400 p-1 text-zinc-400">
+                        <X className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   ))}
-                  <div className="flex flex-col gap-2 mt-2">
-                    <div className="flex gap-2">
-                      <Input 
-                        placeholder="Item name (e.g. Rice)" 
-                        className="h-8 text-xs flex-1" 
-                        value={newItem.name}
-                        onChange={e => setNewItem({...newItem, name: e.target.value})}
-                      />
-                      <Input 
-                        placeholder="Portion" 
-                        className="h-8 text-xs w-24" 
-                        value={newItem.portion}
-                        onChange={e => setNewItem({...newItem, portion: e.target.value})}
-                      />
-                    </div>
-                    <Button size="sm" className="h-8 w-full" onClick={() => addItem(true)}>
-                      <Plus className="w-4 h-4 mr-2" /> Add Item
+                  <div className="flex gap-2 mt-2">
+                    <Input 
+                      placeholder="New component" 
+                      className="h-8 text-xs flex-1 rounded-xl bg-zinc-950 border-zinc-800 text-white" 
+                      value={newItem.name}
+                      onChange={e => setNewItem({...newItem, name: e.target.value})}
+                    />
+                    <Input 
+                      placeholder="Portion" 
+                      className="h-8 text-xs w-24 rounded-xl bg-zinc-950 border-zinc-800 text-white" 
+                      value={newItem.portion}
+                      onChange={e => setNewItem({...newItem, portion: e.target.value})}
+                    />
+                    <Button size="sm" className="h-8 rounded-xl bg-zinc-800 text-white" onClick={() => addItem(true)}>
+                      <Plus className="w-3.5 h-3.5" />
                     </Button>
                   </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-4 gap-2">
-                <div className="space-y-1">
-                  <Label className="text-[10px] text-muted-foreground">Calories</Label>
-                  <Input type="number" className="h-8" value={aiResult.calories} onChange={(e) => setAiResult({...aiResult, calories: Number(e.target.value)})} />
+              {/* Macro Values Grid */}
+              <div className="grid grid-cols-4 gap-2 text-center">
+                <div className="p-2.5 rounded-xl bg-zinc-900 border border-zinc-800">
+                  <Label className="text-[10px] uppercase font-bold text-zinc-400 block mb-1">Calories</Label>
+                  <span className="text-base font-black text-[#CCFF00]">{aiResult.calories}</span>
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-[10px] text-muted-foreground">Protein</Label>
-                  <Input type="number" className="h-8" value={aiResult.protein} onChange={(e) => setAiResult({...aiResult, protein: Number(e.target.value)})} />
+                <div className="p-2.5 rounded-xl bg-zinc-900 border border-zinc-800">
+                  <Label className="text-[10px] uppercase font-bold text-blue-400 block mb-1">Protein</Label>
+                  <span className="text-base font-black text-white">{aiResult.protein}g</span>
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-[10px] text-muted-foreground">Carbs</Label>
-                  <Input type="number" className="h-8" value={aiResult.carbs} onChange={(e) => setAiResult({...aiResult, carbs: Number(e.target.value)})} />
+                <div className="p-2.5 rounded-xl bg-zinc-900 border border-zinc-800">
+                  <Label className="text-[10px] uppercase font-bold text-emerald-400 block mb-1">Carbs</Label>
+                  <span className="text-base font-black text-white">{aiResult.carbs}g</span>
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-[10px] text-muted-foreground">Fats</Label>
-                  <Input type="number" className="h-8" value={aiResult.fats} onChange={(e) => setAiResult({...aiResult, fats: Number(e.target.value)})} />
+                <div className="p-2.5 rounded-xl bg-zinc-900 border border-zinc-800">
+                  <Label className="text-[10px] uppercase font-bold text-orange-400 block mb-1">Fats</Label>
+                  <span className="text-base font-black text-white">{aiResult.fats}g</span>
                 </div>
-              </div>
-
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-muted text-[10px] text-muted-foreground">
-                <Info className="w-4 h-4 shrink-0" />
-                <p>Modifying items allows for more accurate nutrition tracking. Click "Recalculate" to update macros based on your changes.</p>
               </div>
             </div>
           )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAiResultOpen(false)}>Cancel</Button>
-            <Button onClick={() => saveFoodLog(aiResult)}>Confirm & Log</Button>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="ghost" onClick={() => setIsAiResultOpen(false)} className="rounded-xl text-zinc-400">
+              Cancel
+            </Button>
+            <Button 
+              onClick={() => saveFoodLog(aiResult)}
+              className="rounded-xl bg-[#CCFF00] text-black hover:bg-[#b8e600] font-black text-xs shadow-[0_0_15px_rgba(204,255,0,0.3)]"
+            >
+              Confirm & Log Telemetry
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Manual Entry Dialog */}
       <Dialog open={isManualOpen} onOpenChange={setIsManualOpen}>
-        <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto rounded-3xl bg-zinc-950 border-zinc-800 text-zinc-100 p-6 shadow-2xl">
           <DialogHeader>
-            <DialogTitle>Manual Food Entry</DialogTitle>
-            <DialogDescription>
-              Enter the nutritional details of your meal.
+            <DialogTitle className="text-lg font-black tracking-tight text-white flex items-center gap-2">
+              <Utensils className="w-5 h-5 text-[#CCFF00]" />
+              Manual Meal Calibration
+            </DialogTitle>
+            <DialogDescription className="text-xs text-zinc-400">
+              Input specific macro values or use AI auto-fetch.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-6 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="name">Food Name</Label>
+
+          <div className="space-y-4 py-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="name" className="text-xs font-bold text-zinc-300">Food Name</Label>
               <div className="flex gap-2">
-                <Input id="name" placeholder="e.g. Chicken Salad" value={manualFood.name} onChange={e => setManualFood({...manualFood, name: e.target.value})} />
+                <Input 
+                  id="name" 
+                  placeholder="e.g. Grilled Salmon & Quinoa" 
+                  value={manualFood.name} 
+                  onChange={e => setManualFood({...manualFood, name: e.target.value})}
+                  className="rounded-xl bg-zinc-900 border-zinc-800 text-white placeholder:text-zinc-600"
+                />
                 <Button 
                   type="button" 
-                  variant="secondary" 
-                  size="icon" 
                   onClick={fetchNutrition} 
                   disabled={isFetchingNutrition}
-                  title="Auto-fill nutrition using AI"
+                  className="rounded-xl bg-zinc-800 hover:bg-zinc-700 text-[#CCFF00] px-3 shrink-0"
+                  title="Auto-fill with AI"
                 >
-                  {isFetchingNutrition ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4 text-primary" />}
+                  {isFetchingNutrition ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                 </Button>
               </div>
             </div>
 
-            {/* Items Section for Manual */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-bold">Food Items / Components</Label>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="h-7 text-xs gap-1"
-                  onClick={() => handleRecalculate(false)}
-                  disabled={isRecalculating}
-                >
-                  {isRecalculating ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                  Recalculate Nutrition
-                </Button>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="calories" className="text-xs font-bold text-zinc-300">Calories (kcal)</Label>
+                <Input 
+                  id="calories" 
+                  type="number" 
+                  value={manualFood.calories} 
+                  onChange={e => setManualFood({...manualFood, calories: e.target.value})}
+                  className="rounded-xl bg-zinc-900 border-zinc-800 text-white"
+                />
               </div>
-              <div className="space-y-2 p-3 rounded-lg border bg-muted/30">
-                {manualFood.items.map((item, idx) => (
-                  <div key={idx} className="flex items-center gap-2 bg-background border rounded-lg p-2 text-xs">
-                    <span className="font-medium flex-1">{item.name}</span>
-                    <Input 
-                      className="w-24 h-7 text-[10px]" 
-                      value={item.portion} 
-                      onChange={(e) => updateItemPortion(false, idx, e.target.value)}
-                      placeholder="Portion"
-                    />
-                    <button onClick={() => removeItem(false, idx)} className="hover:text-destructive p-1">
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))}
-                <div className="flex flex-col gap-2 mt-2">
-                  <div className="flex gap-2">
-                    <Input 
-                      placeholder="Item name (e.g. Rice)" 
-                      className="h-8 text-xs flex-1" 
-                      value={newItem.name}
-                      onChange={e => setNewItem({...newItem, name: e.target.value})}
-                    />
-                    <Input 
-                      placeholder="Portion" 
-                      className="h-8 text-xs w-24" 
-                      value={newItem.portion}
-                      onChange={e => setNewItem({...newItem, portion: e.target.value})}
-                    />
-                  </div>
-                  <Button size="sm" className="h-8 w-full" onClick={() => addItem(false)}>
-                    <Plus className="w-4 h-4 mr-2" /> Add Item
-                  </Button>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="calories">Calories (kcal)</Label>
-                <Input id="calories" type="number" value={manualFood.calories} onChange={e => setManualFood({...manualFood, calories: e.target.value})} />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="mealType">Meal Type</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="mealType" className="text-xs font-bold text-zinc-300">Meal Window</Label>
                 <Select onValueChange={(v: any) => setManualFood({...manualFood, mealType: v})} defaultValue="lunch">
-                  <SelectTrigger>
+                  <SelectTrigger className="rounded-xl bg-zinc-900 border-zinc-800 text-white">
                     <SelectValue placeholder="Select meal" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-zinc-900 border-zinc-800 text-white">
                     <SelectItem value="breakfast">Breakfast</SelectItem>
                     <SelectItem value="lunch">Lunch</SelectItem>
                     <SelectItem value="dinner">Dinner</SelectItem>
@@ -563,24 +610,51 @@ export const FoodTracker: React.FC = () => {
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="protein">Protein (g)</Label>
-                <Input id="protein" type="number" value={manualFood.protein} onChange={e => setManualFood({...manualFood, protein: e.target.value})} />
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="protein" className="text-xs font-bold text-blue-400">Protein (g)</Label>
+                <Input 
+                  id="protein" 
+                  type="number" 
+                  value={manualFood.protein} 
+                  onChange={e => setManualFood({...manualFood, protein: e.target.value})}
+                  className="rounded-xl bg-zinc-900 border-zinc-800 text-white"
+                />
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="carbs">Carbs (g)</Label>
-                <Input id="carbs" type="number" value={manualFood.carbs} onChange={e => setManualFood({...manualFood, carbs: e.target.value})} />
+              <div className="space-y-1.5">
+                <Label htmlFor="carbs" className="text-xs font-bold text-emerald-400">Carbs (g)</Label>
+                <Input 
+                  id="carbs" 
+                  type="number" 
+                  value={manualFood.carbs} 
+                  onChange={e => setManualFood({...manualFood, carbs: e.target.value})}
+                  className="rounded-xl bg-zinc-900 border-zinc-800 text-white"
+                />
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="fats">Fats (g)</Label>
-                <Input id="fats" type="number" value={manualFood.fats} onChange={e => setManualFood({...manualFood, fats: e.target.value})} />
+              <div className="space-y-1.5">
+                <Label htmlFor="fats" className="text-xs font-bold text-orange-400">Fats (g)</Label>
+                <Input 
+                  id="fats" 
+                  type="number" 
+                  value={manualFood.fats} 
+                  onChange={e => setManualFood({...manualFood, fats: e.target.value})}
+                  className="rounded-xl bg-zinc-900 border-zinc-800 text-white"
+                />
               </div>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsManualOpen(false)}>Cancel</Button>
-            <Button onClick={() => saveFoodLog(manualFood)}>Log Food</Button>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="ghost" onClick={() => setIsManualOpen(false)} className="rounded-xl text-zinc-400">
+              Cancel
+            </Button>
+            <Button 
+              onClick={() => saveFoodLog(manualFood)}
+              className="rounded-xl bg-[#CCFF00] text-black hover:bg-[#b8e600] font-black text-xs shadow-[0_0_15px_rgba(204,255,0,0.3)]"
+            >
+              Log Food
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

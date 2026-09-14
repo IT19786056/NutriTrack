@@ -2,7 +2,7 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import { signInWithGoogle } from '@/src/lib/firebase';
 import { motion } from 'motion/react';
-import { Flame, Utensils, Dumbbell, Droplets, MailCheck } from 'lucide-react';
+import { Flame, Utensils, Dumbbell, Droplets, MailCheck, Zap, Activity } from 'lucide-react';
 
 export const Login: React.FC = () => {
   const [invitedEmail, setInvitedEmail] = React.useState<string | null>(null);
@@ -16,73 +16,83 @@ export const Login: React.FC = () => {
       }
     }
   }, []);
+
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-background overflow-hidden relative">
-      {/* Background Decorative Elements */}
+    <div className="min-h-screen flex items-center justify-center p-4 bg-[#08090E] text-zinc-100 overflow-hidden relative">
+      {/* Bioluminescent Ambient Neon Mesh Glows */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/10 rounded-full blur-[120px]" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-500/10 rounded-full blur-[120px]" />
+        <div className="absolute top-[-15%] left-[-10%] w-[55%] h-[55%] bg-[#CCFF00]/10 rounded-full blur-[140px]" />
+        <div className="absolute bottom-[-15%] right-[-10%] w-[55%] h-[55%] bg-[#00F5FF]/10 rounded-full blur-[140px]" />
       </div>
 
       <motion.div 
-        initial={{ opacity: 0, y: 20 }}
+        initial={{ opacity: 0, y: 25 }}
         animate={{ opacity: 1, y: 0 }}
-        className="max-w-md w-full space-y-8 text-center"
+        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+        className="max-w-md w-full space-y-7 text-center"
       >
-        <div className="space-y-4">
-          <div className="mx-auto w-20 h-20 rounded-2xl bg-primary flex items-center justify-center text-primary-foreground shadow-2xl shadow-primary/20">
-            <Flame className="w-10 h-10" />
+        {/* Brand Crest */}
+        <div className="space-y-3">
+          <div className="mx-auto w-20 h-20 rounded-3xl bg-[#CCFF00] flex items-center justify-center text-black font-black text-3xl shadow-[0_0_35px_rgba(204,255,0,0.4)]">
+            N
           </div>
-          <h1 className="text-4xl font-extrabold tracking-tight lg:text-5xl">
-            NutriTrack <span className="text-primary">AI</span>
-          </h1>
-          <p className="text-muted-foreground text-lg">
-            Your intelligent companion for a healthier lifestyle. Track calories, workouts, and hydration with ease.
+          <div className="flex items-center justify-center gap-2">
+            <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-white uppercase">
+              NutriTrack <span className="text-[#CCFF00]">PRO</span>
+            </h1>
+          </div>
+          <p className="text-xs sm:text-sm text-zinc-400 max-w-sm mx-auto">
+            High-performance AI telemetry for your daily nutrition, kinetic exertion, and cellular hydration.
           </p>
         </div>
 
+        {/* Invitation Feedback Banner */}
         {invitedEmail && (
-          <div className="p-4 rounded-2xl bg-primary/10 border border-primary/20 text-left flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
-            <MailCheck className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+          <div className="p-4 rounded-2xl bg-[#CCFF00]/10 border border-[#CCFF00]/30 text-left flex items-start gap-3">
+            <MailCheck className="w-5 h-5 text-[#CCFF00] shrink-0 mt-0.5" />
             <div className="text-xs space-y-1">
-              <p className="font-semibold text-foreground">You've been invited!</p>
-              <p className="text-muted-foreground">
-                Sign in with <span className="font-medium text-foreground">{invitedEmail}</span> to accept your invitation and access NutriTrack AI.
+              <p className="font-extrabold text-white">VIP Invitation Detected</p>
+              <p className="text-zinc-400">
+                Sign in with <span className="font-bold text-[#CCFF00]">{invitedEmail}</span> to claim your authorized access.
               </p>
             </div>
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-4 py-8">
+        {/* Telemetry Feature Chips */}
+        <div className="grid grid-cols-2 gap-3 py-2">
           {[
-            { icon: Utensils, label: 'AI Nutrition', color: 'text-orange-500' },
-            { icon: Dumbbell, label: 'Workouts', color: 'text-green-500' },
-            { icon: Droplets, label: 'Hydration', color: 'text-blue-500' },
-            { icon: Flame, label: 'Calorie Tracking', color: 'text-primary' },
+            { icon: Utensils, label: 'AI Optical Vision', tag: 'Gemini 2.5', color: 'text-orange-400', border: 'border-orange-500/20' },
+            { icon: Dumbbell, label: 'Kinetic Workouts', tag: 'Burn Telemetry', color: 'text-[#CCFF00]', border: 'border-[#CCFF00]/20' },
+            { icon: Droplets, label: 'Fluid Reactor', tag: 'Wave Hydration', color: 'text-[#00F5FF]', border: 'border-cyan-500/20' },
+            { icon: Flame, label: 'Activity Rings', tag: '100% Score', color: 'text-[#FF3B30]', border: 'border-red-500/20' },
           ].map((item, i) => (
             <motion.div 
               key={item.label}
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: i * 0.1 }}
-              className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-card border shadow-sm"
+              transition={{ delay: i * 0.08 }}
+              className={`flex flex-col items-center gap-1.5 p-3.5 rounded-2xl bg-zinc-900/80 border ${item.border} shadow-lg`}
             >
-              <item.icon className={`w-6 h-6 ${item.color}`} />
-              <span className="text-xs font-medium">{item.label}</span>
+              <item.icon className={`w-5 h-5 ${item.color}`} />
+              <span className="text-xs font-black text-white">{item.label}</span>
+              <span className="text-[9px] font-mono text-zinc-500 uppercase">{item.tag}</span>
             </motion.div>
           ))}
         </div>
 
+        {/* Action Button */}
         <Button 
           onClick={signInWithGoogle} 
           size="lg" 
-          className="w-full h-14 rounded-full text-lg font-bold shadow-xl shadow-primary/20 hover:scale-[1.02] transition-transform"
+          className="w-full h-14 rounded-2xl text-base font-black bg-[#CCFF00] text-black hover:bg-[#b8e600] shadow-[0_0_25px_rgba(204,255,0,0.35)] active:scale-[0.98] transition-transform"
         >
-          Get Started with Google
+          <Zap className="w-5 h-5 mr-2 fill-black" />
+          Enter with Google
         </Button>
 
-        <p className="text-xs text-muted-foreground">
-          By signing in, you agree to our Terms of Service and Privacy Policy.
+        <p className="text-[11px] text-zinc-500">
+          Encrypted with Firebase Auth & Security Protocols.
         </p>
       </motion.div>
     </div>
