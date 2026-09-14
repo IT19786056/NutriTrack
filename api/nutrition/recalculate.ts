@@ -4,6 +4,14 @@ import crypto from 'crypto';
 
 const DEFAULT_FIREBASE_PROJECT_ID = 'calorieapp-caca8';
 
+const FALLBACK_MODELS = [
+  'gemini-3.8-flash',
+  'gemini-2.5-pro',
+  'gemini-3.7-flash',
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
+];
+
 let cachedCertificates: Record<string, string> | null = null;
 let certsExpiryTime = 0;
 
@@ -119,11 +127,11 @@ const foodItemSchema = {
   properties: {
     name: {
       type: Type.STRING,
-      description: "Name of the food item or component (e.g., 'Rice', 'Chicken Curry', 'Ice Cream')",
+      description: "Precise name of the food item or component",
     },
     portion: {
       type: Type.STRING,
-      description: "Portion size or measurement (e.g., '1 cup', '100g', '2 scoops', '1 slice')",
+      description: "Portion size or measurement",
     },
   },
   required: ["name", "portion"],
@@ -132,20 +140,48 @@ const foodItemSchema = {
 const nutritionalInfoSchema = {
   type: Type.OBJECT,
   properties: {
-    name: { type: Type.STRING, description: "Name of the dish or food" },
-    calories: { type: Type.NUMBER, description: "Estimated total calories" },
-    protein: { type: Type.NUMBER, description: "Estimated protein in grams" },
-    carbs: { type: Type.NUMBER, description: "Estimated carbohydrates in grams" },
-    fats: { type: Type.NUMBER, description: "Estimated fats in grams" },
-    servingSize: { type: Type.STRING, description: "Estimated serving size" },
+    name: { type: Type.STRING, description: "Name of the dish or meal" },
+    calories: { type: Type.NUMBER, description: "Total calories in kcal matching the combined ingredients" },
+    protein: { type: Type.NUMBER, description: "Total protein in grams" },
+    carbs: { type: Type.NUMBER, description: "Total carbohydrates in grams" },
+    fats: { type: Type.NUMBER, description: "Total fats in grams" },
+    servingSize: { type: Type.STRING, description: "Serving size or estimated weight" },
     items: {
       type: Type.ARRAY,
       items: foodItemSchema,
-      description: "List of distinct food items/components with portions",
+      description: "List of constituent food items and portions",
     },
   },
   required: ["name", "calories", "protein", "carbs", "fats", "servingSize", "items"],
 };
+
+async function generateWithFallback(ai: GoogleGenAI, contents: any) {
+  let lastError: any = null;
+
+  for (let i = 0; i < FALLBACK_MODELS.length; i++) {
+    const model = FALLBACK_MODELS[i];
+    try {
+      const response = await ai.models.generateContent({
+        model,
+        contents,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: nutritionalInfoSchema,
+        },
+      });
+
+      if (response && response.text) {
+        return response;
+      }
+    } catch (err: any) {
+      lastError = err;
+      const errMsg = err.message || JSON.stringify(err);
+      console.warn(`Model ${model} failed, attempting fallback to next model... Error: ${errMsg}`);
+    }
+  }
+
+  throw lastError || new Error('All AI models are currently experiencing high demand. Please try again in a few moments.');
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
@@ -187,16 +223,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const ai = new GoogleGenAI({ apiKey });
     const itemsStr = items.map((i: any) => `${i.portion} of ${i.name}`).join(', ');
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `Recalculate the nutritional information for "${foodName || 'Dish'}" based on this specific list of food items/components and their portions: ${itemsStr}. 
-CRITICAL: Provide the total nutritional facts for the WHOLE dish based on these specific portions. 
-Ensure the values are realistic (e.g., 100g of chicken is ~31g protein, not 200g).`,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: nutritionalInfoSchema,
-      },
-    });
+    const contents = `You are an expert clinical dietitian. Recalculate the exact nutritional information for "${foodName || 'Dish'}" based on this specific itemized breakdown and portions: ${itemsStr}.
+CRITICAL ACCURACY GUIDELINES:
+1. Provide the true total nutritional facts for the ENTIRE dish combining these specific portions.
+2. Validate each item against standard USDA nutritional benchmarks (e.g., 100g cooked chicken breast = ~165 kcal, 31g protein, 3.6g fat; 1 cup cooked rice = ~200 kcal, 4.3g protein, 45g carbs; 1 tbsp olive oil = ~120 kcal, 14g fat).
+3. Ensure the macro totals strictly equal the sum of each ingredient's contribution.`;
+
+    const response = await generateWithFallback(ai, contents);
 
     if (!response.text) {
       return res.status(500).json({ error: 'AI returned an empty response.' });

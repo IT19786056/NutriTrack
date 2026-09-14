@@ -4,6 +4,14 @@ import crypto from 'crypto';
 
 const DEFAULT_FIREBASE_PROJECT_ID = 'calorieapp-caca8';
 
+const FALLBACK_MODELS = [
+  'gemini-3.8-flash',
+  'gemini-2.5-pro',
+  'gemini-3.7-flash',
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
+];
+
 let cachedCertificates: Record<string, string> | null = null;
 let certsExpiryTime = 0;
 
@@ -119,11 +127,11 @@ const foodItemSchema = {
   properties: {
     name: {
       type: Type.STRING,
-      description: "Name of the food item or component (e.g., 'Rice', 'Chicken Curry', 'Ice Cream')",
+      description: "Precise name of the ingredient or component (e.g., 'Cooked Quinoa', 'Avocado slice')",
     },
     portion: {
       type: Type.STRING,
-      description: "Portion size or measurement (e.g., '1 cup', '100g', '2 scoops', '1 slice')",
+      description: "Portion size with estimated metric and standard units (e.g., '100g', '1 cup')",
     },
   },
   required: ["name", "portion"],
@@ -132,20 +140,48 @@ const foodItemSchema = {
 const nutritionalInfoSchema = {
   type: Type.OBJECT,
   properties: {
-    name: { type: Type.STRING, description: "Name of the dish or food" },
-    calories: { type: Type.NUMBER, description: "Estimated total calories" },
-    protein: { type: Type.NUMBER, description: "Estimated protein in grams" },
-    carbs: { type: Type.NUMBER, description: "Estimated carbohydrates in grams" },
-    fats: { type: Type.NUMBER, description: "Estimated fats in grams" },
-    servingSize: { type: Type.STRING, description: "Estimated serving size" },
+    name: { type: Type.STRING, description: "Accurate name of the dish" },
+    calories: { type: Type.NUMBER, description: "Total estimated calories (kcal)" },
+    protein: { type: Type.NUMBER, description: "Total estimated protein in grams (g)" },
+    carbs: { type: Type.NUMBER, description: "Total estimated carbohydrates in grams (g)" },
+    fats: { type: Type.NUMBER, description: "Total estimated dietary fats in grams (g)" },
+    servingSize: { type: Type.STRING, description: "Standard single serving size" },
     items: {
       type: Type.ARRAY,
       items: foodItemSchema,
-      description: "List of distinct food items/components with portions",
+      description: "Itemized components making up this standard dish",
     },
   },
   required: ["name", "calories", "protein", "carbs", "fats", "servingSize", "items"],
 };
+
+async function generateWithFallback(ai: GoogleGenAI, contents: any) {
+  let lastError: any = null;
+
+  for (let i = 0; i < FALLBACK_MODELS.length; i++) {
+    const model = FALLBACK_MODELS[i];
+    try {
+      const response = await ai.models.generateContent({
+        model,
+        contents,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: nutritionalInfoSchema,
+        },
+      });
+
+      if (response && response.text) {
+        return response;
+      }
+    } catch (err: any) {
+      lastError = err;
+      const errMsg = err.message || JSON.stringify(err);
+      console.warn(`Model ${model} failed, attempting fallback to next model... Error: ${errMsg}`);
+    }
+  }
+
+  throw lastError || new Error('All AI models are currently experiencing high demand. Please try again in a few moments.');
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
@@ -186,14 +222,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const ai = new GoogleGenAI({ apiKey });
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `Provide nutritional information for "${name.trim()}". Identify the distinct food items/components that make up this dish and their estimated portions for a standard serving. Be as accurate as possible with estimations.`,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: nutritionalInfoSchema,
-      },
-    });
+    const contents = `You are an expert clinical dietitian. Provide accurate nutritional information for a standard single serving of "${name.trim()}":
+1. Break down the dish into its authentic component ingredients and typical portions.
+2. Use verified USDA/dietary database standards for caloric and macronutrient density.
+3. Account for standard preparation methods (cooking oils, seasonings, sauces).
+4. Ensure the total calories and macronutrients strictly match the sum of its components.`;
+
+    const response = await generateWithFallback(ai, contents);
 
     if (!response.text) {
       return res.status(500).json({ error: 'AI returned an empty response.' });

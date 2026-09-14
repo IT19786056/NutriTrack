@@ -15,16 +15,24 @@ export interface NutritionalInfo {
   items: FoodItem[];
 }
 
+const FALLBACK_MODELS = [
+  "gemini-3.8-flash",
+  "gemini-2.5-pro",
+  "gemini-3.7-flash",
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+];
+
 const foodItemSchema = {
   type: Type.OBJECT,
   properties: {
     name: {
       type: Type.STRING,
-      description: "Name of the food item or component (e.g., 'Rice', 'Chicken Curry', 'Ice Cream')",
+      description: "Precise name of the food item or component (e.g., 'Grilled Chicken Breast', 'Steamed Jasmine Rice', 'Olive Oil dressing')",
     },
     portion: {
       type: Type.STRING,
-      description: "Portion size or measurement (e.g., '1 cup', '100g', '2 scoops', '1 slice')",
+      description: "Portion size with estimated metric and standard units (e.g., '150g (1 medium breast)', '1 cup (180g)', '1 tbsp (15ml)')",
     },
   },
   required: ["name", "portion"],
@@ -33,16 +41,16 @@ const foodItemSchema = {
 const nutritionalInfoSchema = {
   type: Type.OBJECT,
   properties: {
-    name: { type: Type.STRING, description: "Name of the dish or food" },
-    calories: { type: Type.NUMBER, description: "Estimated total calories" },
-    protein: { type: Type.NUMBER, description: "Estimated protein in grams" },
-    carbs: { type: Type.NUMBER, description: "Estimated carbohydrates in grams" },
-    fats: { type: Type.NUMBER, description: "Estimated fats in grams" },
-    servingSize: { type: Type.STRING, description: "Estimated serving size" },
+    name: { type: Type.STRING, description: "Accurate, descriptive name of the dish or meal" },
+    calories: { type: Type.NUMBER, description: "Total estimated calories (kcal) matching the sum of components" },
+    protein: { type: Type.NUMBER, description: "Total estimated protein in grams (g)" },
+    carbs: { type: Type.NUMBER, description: "Total estimated carbohydrates in grams (g)" },
+    fats: { type: Type.NUMBER, description: "Total estimated dietary fats in grams (g)" },
+    servingSize: { type: Type.STRING, description: "Estimated total serving weight or volume (e.g., '1 bowl (~380g)')" },
     items: {
       type: Type.ARRAY,
       items: foodItemSchema,
-      description: "List of distinct food items/components with portions",
+      description: "Exhaustive list of identified distinct food components, sides, sauces, and cooking oils",
     },
   },
   required: ["name", "calories", "protein", "carbs", "fats", "servingSize", "items"],
@@ -54,6 +62,34 @@ function getGenAI(): GoogleGenAI {
     throw new Error("GEMINI_API_KEY is not configured on the server.");
   }
   return new GoogleGenAI({ apiKey });
+}
+
+async function generateWithFallback(ai: GoogleGenAI, contents: any) {
+  let lastError: any = null;
+
+  for (let i = 0; i < FALLBACK_MODELS.length; i++) {
+    const model = FALLBACK_MODELS[i];
+    try {
+      const response = await ai.models.generateContent({
+        model,
+        contents,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: nutritionalInfoSchema,
+        },
+      });
+
+      if (response && response.text) {
+        return response;
+      }
+    } catch (err: any) {
+      lastError = err;
+      const errMsg = err.message || JSON.stringify(err);
+      console.warn(`Model ${model} failed, trying fallback to next model... Error: ${errMsg}`);
+    }
+  }
+
+  throw lastError || new Error("All AI models are currently experiencing high demand. Please try again.");
 }
 
 export function validateDishName(name: unknown): string {
@@ -105,26 +141,23 @@ export async function analyzeFoodImageServer(base64Image: string): Promise<Nutri
   const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
   const rawData = validatedImage.includes(",") ? validatedImage.split(",")[1] : validatedImage;
 
-  const imagePart = {
-    inlineData: {
-      data: rawData,
-      mimeType,
-    },
-  };
-
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: [
-      imagePart,
-      {
-        text: "Analyze this food image and provide nutritional information. Identify the distinct food items/components in the dish (e.g., if it's rice and curry, list 'Rice', 'Chicken Curry', etc.) and their estimated portions (e.g., '1 cup', '100g', '2 scoops'). Be as accurate as possible with estimations.",
+  const contents = [
+    {
+      inlineData: {
+        data: rawData,
+        mimeType,
       },
-    ],
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: nutritionalInfoSchema,
     },
-  });
+    {
+      text: `You are an expert clinical dietitian and computer vision nutritionist. Analyze this food photo with the highest possible precision (target 99% accuracy):
+1. DECONSTRUCT: Identify every distinct food component, ingredient, side, sauce, cooking oil, and dressing visible or inferred from preparation style (e.g. deep-fried vs grilled vs steamed).
+2. ESTIMATE PORTIONS: Use visual cues (plate/bowl proportions, utensil scale, food thickness) to determine realistic gram/ounce portions.
+3. COMPUTE ACCURATE MACROS: Calculate realistic calories, protein, carbs, and fats using verified USDA nutritional reference standards. Account for absorbed cooking fats and hidden sauces.
+4. SUM INTEGRITY: Ensure the total calories, protein, carbs, and fats strictly equal the sum of all itemized components.`,
+    },
+  ];
+
+  const response = await generateWithFallback(ai, contents);
 
   if (!response.text) {
     throw new Error("AI returned empty response.");
@@ -137,14 +170,13 @@ export async function getNutritionByNameServer(name: string): Promise<Nutritiona
   const validatedName = validateDishName(name);
   const ai = getGenAI();
 
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: `Provide nutritional information for "${validatedName}". Identify the distinct food items/components that make up this dish and their estimated portions for a standard serving. Be as accurate as possible with estimations.`,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: nutritionalInfoSchema,
-    },
-  });
+  const contents = `You are an expert clinical dietitian. Provide accurate nutritional information for a standard single serving of "${validatedName}":
+1. Break down the dish into its authentic component ingredients and typical portions.
+2. Use verified USDA/dietary database standards for caloric and macronutrient density.
+3. Account for standard preparation methods (cooking oils, seasonings, sauces).
+4. Ensure the total calories and macronutrients strictly match the sum of its components.`;
+
+  const response = await generateWithFallback(ai, contents);
 
   if (!response.text) {
     throw new Error("AI returned empty response.");
@@ -162,16 +194,13 @@ export async function recalculateNutritionServer(
   const ai = getGenAI();
 
   const itemsStr = validatedItems.map((i) => `${i.portion} of ${i.name}`).join(", ");
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: `Recalculate the nutritional information for "${validatedName}" based on this specific list of food items/components and their portions: ${itemsStr}. 
-CRITICAL: Provide the total nutritional facts for the WHOLE dish based on these specific portions. 
-Ensure the values are realistic (e.g., 100g of chicken is ~31g protein, not 200g).`,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: nutritionalInfoSchema,
-    },
-  });
+  const contents = `You are an expert clinical dietitian. Recalculate the exact nutritional information for "${validatedName}" based on this specific itemized breakdown and portions: ${itemsStr}.
+CRITICAL ACCURACY GUIDELINES:
+1. Provide the true total nutritional facts for the ENTIRE dish combining these specific portions.
+2. Validate each item against standard USDA nutritional benchmarks (e.g., 100g cooked chicken breast = ~165 kcal, 31g protein, 3.6g fat; 1 cup cooked rice = ~200 kcal, 4.3g protein, 45g carbs; 1 tbsp olive oil = ~120 kcal, 14g fat).
+3. Ensure the macro totals strictly equal the sum of each ingredient's contribution.`;
+
+  const response = await generateWithFallback(ai, contents);
 
   if (!response.text) {
     throw new Error("AI returned empty response.");
