@@ -2,7 +2,10 @@ import React, { useState, useRef, useEffect } from 'react';
 import { collection, addDoc, query, onSnapshot, orderBy, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '@/src/lib/firebase';
 import { useAuth } from '@/src/lib/AuthContext';
-import { analyzeFoodImage, getNutritionByName, NutritionalInfo, recalculateNutrition } from '@/src/lib/gemini';
+import { analyzeFoodImage, getNutritionByName, NutritionalInfo } from '@/src/lib/gemini';
+import { loadFoodHints, rememberFoods } from '@/src/lib/foodMemory';
+import { isGramBased, totalsOf } from '@/src/lib/nutrition';
+import { FoodItemsEditor } from '@/src/components/FoodItemsEditor';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,7 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { handleFirestoreError, OperationType } from '@/src/lib/firestore-errors';
 import { resizeImage } from '@/src/lib/image-utils';
-import { FoodLog, FoodItem } from '@/src/types';
+import { FoodLog, FoodItem, FoodHint } from '@/src/types';
 import { motion } from 'motion/react';
 import confetti from 'canvas-confetti';
 
@@ -21,11 +24,11 @@ export const FoodTracker: React.FC = () => {
   const { user } = useAuth();
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isFetchingNutrition, setIsFetchingNutrition] = useState(false);
-  const [isRecalculating, setIsRecalculating] = useState(false);
   const [isManualOpen, setIsManualOpen] = useState(false);
   const [isAiResultOpen, setIsAiResultOpen] = useState(false);
   const [aiResult, setAiResult] = useState<NutritionalInfo | null>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [hints, setHints] = useState<FoodHint[]>([]);
   const [foodLogs, setFoodLogs] = useState<FoodLog[]>([]);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -39,8 +42,6 @@ export const FoodTracker: React.FC = () => {
     mealType: 'lunch' as const,
     items: [] as FoodItem[]
   });
-
-  const [newItem, setNewItem] = useState({ name: '', portion: '' });
 
   useEffect(() => {
     if (!user) return;
@@ -67,7 +68,9 @@ export const FoodTracker: React.FC = () => {
 
     setIsFetchingNutrition(true);
     try {
-      const result = await getNutritionByName(manualFood.name);
+      const knownFoods = user ? await loadFoodHints(user.uid) : [];
+      setHints(knownFoods);
+      const result = await getNutritionByName(manualFood.name, knownFoods);
       setManualFood({
         ...manualFood,
         calories: result.calories.toString(),
@@ -85,41 +88,24 @@ export const FoodTracker: React.FC = () => {
     }
   };
 
-  const handleRecalculate = async (isAi: boolean) => {
-    const currentFood = isAi ? aiResult : manualFood;
-    if (!currentFood || !currentFood.items || currentFood.items.length === 0) {
-      toast.error('Add items to recalculate');
-      return;
-    }
-
-    setIsRecalculating(true);
-    try {
-      const result = await recalculateNutrition(currentFood.items, currentFood.name);
-      if (isAi && aiResult) {
-        setAiResult({
-          ...aiResult,
-          calories: result.calories,
-          protein: result.protein,
-          carbs: result.carbs,
-          fats: result.fats,
-          items: result.items
-        });
-      } else {
-        setManualFood({
-          ...manualFood,
-          calories: result.calories.toString(),
-          protein: result.protein.toString(),
-          carbs: result.carbs.toString(),
-          fats: result.fats.toString(),
-          items: result.items
-        });
-      }
-      toast.success('Telemetry recalibrated based on portion items');
-    } catch (error) {
-      console.error('Recalculation failed:', error);
-      toast.error('Failed to recalculate nutrition');
-    } finally {
-      setIsRecalculating(false);
+  // Items carry per-100g values, so totals are plain arithmetic: no AI call when a weight changes.
+  const handleItemsChange = (isAi: boolean, items: FoodItem[]) => {
+    const totals = isGramBased(items) ? totalsOf(items) : null;
+    if (isAi && aiResult) {
+      setAiResult({ ...aiResult, items, ...(totals ?? {}) });
+    } else {
+      setManualFood({
+        ...manualFood,
+        items,
+        ...(totals
+          ? {
+              calories: totals.calories.toString(),
+              protein: totals.protein.toString(),
+              carbs: totals.carbs.toString(),
+              fats: totals.fats.toString(),
+            }
+          : {}),
+      });
     }
   };
 
@@ -135,7 +121,9 @@ export const FoodTracker: React.FC = () => {
         const base64Data = resized.split(',')[1];
         setCapturedImage(resized);
         
-        const result = await analyzeFoodImage(base64Data);
+        const knownFoods = user ? await loadFoodHints(user.uid) : [];
+        setHints(knownFoods);
+        const result = await analyzeFoodImage(base64Data, knownFoods);
         setAiResult(result);
         setIsAiResultOpen(true);
       } catch (error) {
@@ -173,6 +161,9 @@ export const FoodTracker: React.FC = () => {
         items: food.items || []
       });
 
+      // Learn from this meal (weights always, nutrient values only when the user corrected them).
+      await rememberFoods(user.uid, food.items || []);
+
       confetti({
         particleCount: 80,
         spread: 65,
@@ -199,44 +190,6 @@ export const FoodTracker: React.FC = () => {
       toast.success('Food log removed');
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, path);
-    }
-  };
-
-  const addItem = (isAi: boolean) => {
-    if (!newItem.name.trim() || !newItem.portion.trim()) {
-      toast.error('Enter both name and portion');
-      return;
-    }
-    const item: FoodItem = { name: newItem.name.trim(), portion: newItem.portion.trim() };
-    if (isAi && aiResult) {
-      setAiResult({ ...aiResult, items: [...aiResult.items, item] });
-    } else {
-      setManualFood({ ...manualFood, items: [...manualFood.items, item] });
-    }
-    setNewItem({ name: '', portion: '' });
-  };
-
-  const removeItem = (isAi: boolean, index: number) => {
-    if (isAi && aiResult) {
-      const newItems = [...aiResult.items];
-      newItems.splice(index, 1);
-      setAiResult({ ...aiResult, items: newItems });
-    } else {
-      const newItems = [...manualFood.items];
-      newItems.splice(index, 1);
-      setManualFood({ ...manualFood, items: newItems });
-    }
-  };
-
-  const updateItemPortion = (isAi: boolean, index: number, portion: string) => {
-    if (isAi && aiResult) {
-      const newItems = [...aiResult.items];
-      newItems[index] = { ...newItems[index], portion };
-      setAiResult({ ...aiResult, items: newItems });
-    } else {
-      const newItems = [...manualFood.items];
-      newItems[index] = { ...newItems[index], portion };
-      setManualFood({ ...manualFood, items: newItems });
     }
   };
 
@@ -464,52 +417,12 @@ export const FoodTracker: React.FC = () => {
 
               {/* Items Section */}
               <div className="space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs font-black uppercase tracking-wider text-zinc-300">Components & Portions</Label>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className="h-7 text-[11px] gap-1 rounded-lg border-zinc-700 bg-zinc-900 text-[#CCFF00]"
-                    onClick={() => handleRecalculate(true)}
-                    disabled={isRecalculating}
-                  >
-                    {isRecalculating ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                    Recalibrate
-                  </Button>
-                </div>
-                <div className="space-y-2 p-3 rounded-2xl border border-zinc-800 bg-zinc-900/60">
-                  {aiResult.items.map((item, idx) => (
-                    <div key={idx} className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 rounded-xl p-2 text-xs">
-                      <span className="font-bold flex-1 text-white">{item.name}</span>
-                      <Input 
-                        className="w-24 h-7 text-[11px] rounded-lg bg-zinc-900 border-zinc-800 text-white" 
-                        value={item.portion} 
-                        onChange={(e) => updateItemPortion(true, idx, e.target.value)}
-                        placeholder="Portion"
-                      />
-                      <button onClick={() => removeItem(true, idx)} className="hover:text-red-400 p-1 text-zinc-400">
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                  <div className="flex gap-2 mt-2">
-                    <Input 
-                      placeholder="New component" 
-                      className="h-8 text-xs flex-1 rounded-xl bg-zinc-950 border-zinc-800 text-white" 
-                      value={newItem.name}
-                      onChange={e => setNewItem({...newItem, name: e.target.value})}
-                    />
-                    <Input 
-                      placeholder="Portion" 
-                      className="h-8 text-xs w-24 rounded-xl bg-zinc-950 border-zinc-800 text-white" 
-                      value={newItem.portion}
-                      onChange={e => setNewItem({...newItem, portion: e.target.value})}
-                    />
-                    <Button size="sm" className="h-8 rounded-xl bg-zinc-800 text-white" onClick={() => addItem(true)}>
-                      <Plus className="w-3.5 h-3.5" />
-                    </Button>
-                  </div>
-                </div>
+                <Label className="text-xs font-black uppercase tracking-wider text-zinc-300">Components & Weights</Label>
+                <FoodItemsEditor
+                  items={aiResult.items}
+                  onChange={(items) => handleItemsChange(true, items)}
+                  hints={hints}
+                />
               </div>
 
               {/* Macro Values Grid */}
@@ -583,6 +496,17 @@ export const FoodTracker: React.FC = () => {
                 </Button>
               </div>
             </div>
+
+            {manualFood.items.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-xs font-black uppercase tracking-wider text-zinc-300">Components & Weights</Label>
+                <FoodItemsEditor
+                  items={manualFood.items}
+                  onChange={(items) => handleItemsChange(false, items)}
+                  hints={hints}
+                />
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">

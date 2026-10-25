@@ -11,8 +11,8 @@ import {
 import {
   createRateLimitMiddleware,
 } from "./server/rateLimiter";
+import analyzeHandler from "./api/nutrition/analyze";
 import {
-  analyzeFoodImageServer,
   getNutritionByNameServer,
   recalculateNutritionServer,
 } from "./server/geminiService";
@@ -148,17 +148,8 @@ app.post("/api/invite", inviteRateLimiter, requireAdmin, async (req: Authenticat
 });
 
 // API Routes for Nutrition AI (User authenticated + rate limited)
-app.post("/api/nutrition/analyze", nutritionRateLimiter, requireAuth, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { image } = req.body;
-    const result = await analyzeFoodImageServer(image);
-    return res.json({ success: true, data: result });
-  } catch (error: any) {
-    console.error("Nutrition analyze error:", error.message || error);
-    const status = error.message?.includes("exceeds") || error.message?.includes("required") ? 400 : 500;
-    return res.status(status).json({ error: error.message || "Failed to analyze food image." });
-  }
-});
+// Same handler Vercel runs in production (auth, rate limiting, USDA lookup and user hints included).
+app.post("/api/nutrition/analyze", analyzeHandler as any);
 
 app.post("/api/nutrition/name", nutritionRateLimiter, requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {

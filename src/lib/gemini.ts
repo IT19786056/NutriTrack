@@ -1,5 +1,6 @@
 import { auth } from "./firebase";
-import { FoodItem } from "../types";
+import { FoodHint, FoodItem } from "../types";
+import { withGrams } from "./nutrition";
 
 export interface NutritionalInfo {
   name: string;
@@ -23,38 +24,42 @@ async function getAuthHeaders(): Promise<HeadersInit> {
   };
 }
 
-export async function analyzeFoodImage(base64Image: string): Promise<NutritionalInfo> {
+async function requestAnalysis(
+  body: { image?: string; name?: string },
+  hints: FoodHint[],
+  failureMessage: string
+): Promise<NutritionalInfo> {
   const headers = await getAuthHeaders();
   const response = await fetch("/api/nutrition/analyze", {
     method: "POST",
     headers,
-    body: JSON.stringify({ image: base64Image }),
+    body: JSON.stringify({ ...body, hints }),
   });
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || "Failed to analyze food image.");
+    throw new Error(errorData.error || failureMessage);
   }
 
   const result = await response.json();
   return result.data;
 }
 
-export async function getNutritionByName(name: string): Promise<NutritionalInfo> {
-  const headers = await getAuthHeaders();
-  const response = await fetch("/api/nutrition/name", {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ name }),
-  });
+export function analyzeFoodImage(base64Image: string, hints: FoodHint[] = []): Promise<NutritionalInfo> {
+  return requestAnalysis({ image: base64Image }, hints, "Failed to analyze food image.");
+}
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || "Failed to fetch nutrition information.");
-  }
+export function getNutritionByName(name: string, hints: FoodHint[] = []): Promise<NutritionalInfo> {
+  return requestAnalysis({ name }, hints, "Failed to fetch nutrition information.");
+}
 
-  const result = await response.json();
-  return result.data;
+/** Look up one extra component at a stated weight; returns it as a gram-based item. */
+export async function lookupComponent(name: string, grams: number, hints: FoodHint[] = []): Promise<FoodItem> {
+  const result = await requestAnalysis({ name: `${grams} g ${name}` }, hints, "Failed to look up component.");
+  const first = result.items[0];
+  if (!first?.per100g) throw new Error("Could not find nutrition for that component.");
+  // Keep the user's own wording and weight; only the nutrient profile comes from the lookup.
+  return withGrams({ ...first, name }, grams);
 }
 
 export async function recalculateNutrition(items: FoodItem[], foodName: string): Promise<NutritionalInfo> {
