@@ -6,10 +6,9 @@ const DEFAULT_FIREBASE_PROJECT_ID = 'calorieapp-caca8';
 
 const FALLBACK_MODELS = [
   'gemini-3.8-flash',
-  'gemini-2.5-pro',
-  'gemini-3.7-flash',
+  'gemini-3.6-flash',
   'gemini-2.5-flash',
-  'gemini-2.0-flash',
+  'gemini-2.5-pro',
 ];
 
 let cachedCertificates: Record<string, string> | null = null;
@@ -156,10 +155,9 @@ const nutritionalInfoSchema = {
 };
 
 async function generateWithFallback(ai: GoogleGenAI, contents: any) {
-  let lastError: any = null;
+  const failures: string[] = [];
 
-  for (let i = 0; i < FALLBACK_MODELS.length; i++) {
-    const model = FALLBACK_MODELS[i];
+  for (const model of FALLBACK_MODELS) {
     try {
       const response = await ai.models.generateContent({
         model,
@@ -173,14 +171,20 @@ async function generateWithFallback(ai: GoogleGenAI, contents: any) {
       if (response && response.text) {
         return response;
       }
+      failures.push(`${model}: empty response`);
     } catch (err: any) {
-      lastError = err;
-      const errMsg = err.message || JSON.stringify(err);
-      console.warn(`Model ${model} failed, attempting fallback to next model... Error: ${errMsg}`);
+      const status = err?.status ?? err?.code;
+      const msg = err?.message || JSON.stringify(err);
+      failures.push(`${model}: [${status ?? 'n/a'}] ${msg}`);
+      console.warn(`Model ${model} failed, trying next. [${status ?? 'n/a'}] ${msg}`);
+      // Credential problems affect every model, so there is no point falling back.
+      if (status === 401 || status === 403) break;
     }
   }
 
-  throw lastError || new Error('All AI models are currently experiencing high demand. Please try again in a few moments.');
+  // Keep the per-model reasons in server logs only; never surface provider internals to the client.
+  console.error('All Gemini models failed:', failures);
+  throw new Error('The AI service is temporarily unavailable. Please try again shortly.');
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -221,8 +225,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).json({ error: 'GEMINI_API_KEY is not configured in Vercel environment variables.' });
     }
 
+    const cleanName = name.trim();
+    if (cleanName.length > 200) {
+      return res.status(400).json({ error: 'Food name is too long (maximum 200 characters).' });
+    }
+
     const ai = new GoogleGenAI({ apiKey });
-    const contents = `You are an expert clinical dietitian. Provide accurate nutritional information for a standard single serving of "${name.trim()}":
+    const contents = `You are an expert clinical dietitian. Provide accurate nutritional information for a standard single serving of "${cleanName}":
 1. Break down the dish into its authentic component ingredients and typical portions.
 2. Use verified USDA/dietary database standards for caloric and macronutrient density.
 3. Account for standard preparation methods (cooking oils, seasonings, sauces).

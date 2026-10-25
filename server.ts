@@ -65,7 +65,7 @@ async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextF
 async function requireAdmin(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   await requireAuth(req, res, async () => {
     const token = extractBearerToken(req.headers.authorization);
-    const authorized = await isUserAdmin(token || '', req.user?.uid || '', req.user?.email);
+    const authorized = await isUserAdmin(token || '', req.user?.uid || '', req.user?.email_verified === true ? req.user?.email : undefined);
     if (!authorized) {
       return res.status(403).json({
         error: `Forbidden: Administrator access required. Signed in as: ${req.user?.email || 'unknown'}.`,

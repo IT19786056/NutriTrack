@@ -6,10 +6,9 @@ const DEFAULT_FIREBASE_PROJECT_ID = 'calorieapp-caca8';
 
 const FALLBACK_MODELS = [
   'gemini-3.8-flash',
-  'gemini-2.5-pro',
-  'gemini-3.7-flash',
+  'gemini-3.6-flash',
   'gemini-2.5-flash',
-  'gemini-2.0-flash',
+  'gemini-2.5-pro',
 ];
 
 let cachedCertificates: Record<string, string> | null = null;
@@ -156,10 +155,9 @@ const nutritionalInfoSchema = {
 };
 
 async function generateWithFallback(ai: GoogleGenAI, contents: any) {
-  let lastError: any = null;
+  const failures: string[] = [];
 
-  for (let i = 0; i < FALLBACK_MODELS.length; i++) {
-    const model = FALLBACK_MODELS[i];
+  for (const model of FALLBACK_MODELS) {
     try {
       const response = await ai.models.generateContent({
         model,
@@ -173,14 +171,20 @@ async function generateWithFallback(ai: GoogleGenAI, contents: any) {
       if (response && response.text) {
         return response;
       }
+      failures.push(`${model}: empty response`);
     } catch (err: any) {
-      lastError = err;
-      const errMsg = err.message || JSON.stringify(err);
-      console.warn(`Model ${model} failed, attempting fallback to next model... Error: ${errMsg}`);
+      const status = err?.status ?? err?.code;
+      const msg = err?.message || JSON.stringify(err);
+      failures.push(`${model}: [${status ?? 'n/a'}] ${msg}`);
+      console.warn(`Model ${model} failed, trying next. [${status ?? 'n/a'}] ${msg}`);
+      // Credential problems affect every model, so there is no point falling back.
+      if (status === 401 || status === 403) break;
     }
   }
 
-  throw lastError || new Error('All AI models are currently experiencing high demand. Please try again in a few moments.');
+  // Keep the per-model reasons in server logs only; never surface provider internals to the client.
+  console.error('All Gemini models failed:', failures);
+  throw new Error('The AI service is temporarily unavailable. Please try again shortly.');
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -212,8 +216,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const { items, foodName } = req.body || {};
-    if (!Array.isArray(items)) {
-      return res.status(400).json({ error: 'Food items must be an array.' });
+    if (!Array.isArray(items) || items.length > 50) {
+      return res.status(400).json({ error: 'Food items must be an array of at most 50 entries.' });
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
@@ -222,8 +226,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const ai = new GoogleGenAI({ apiKey });
-    const itemsStr = items.map((i: any) => `${i.portion} of ${i.name}`).join(', ');
-    const contents = `You are an expert clinical dietitian. Recalculate the exact nutritional information for "${foodName || 'Dish'}" based on this specific itemized breakdown and portions: ${itemsStr}.
+    const itemsStr = items
+      .map((i: any) => `${String(i?.portion ?? '').trim().slice(0, 100)} of ${String(i?.name ?? '').trim().slice(0, 100)}`)
+      .join(', ');
+    const safeFoodName = String(foodName || 'Dish').trim().slice(0, 200);
+    const contents = `You are an expert clinical dietitian. Recalculate the exact nutritional information for "${safeFoodName}" based on this specific itemized breakdown and portions: ${itemsStr}.
 CRITICAL ACCURACY GUIDELINES:
 1. Provide the true total nutritional facts for the ENTIRE dish combining these specific portions.
 2. Validate each item against standard USDA nutritional benchmarks (e.g., 100g cooked chicken breast = ~165 kcal, 31g protein, 3.6g fat; 1 cup cooked rice = ~200 kcal, 4.3g protein, 45g carbs; 1 tbsp olive oil = ~120 kcal, 14g fat).

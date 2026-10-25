@@ -17,10 +17,9 @@ export interface NutritionalInfo {
 
 const FALLBACK_MODELS = [
   "gemini-3.8-flash",
-  "gemini-2.5-pro",
-  "gemini-3.7-flash",
+  "gemini-3.6-flash",
   "gemini-2.5-flash",
-  "gemini-2.0-flash",
+  "gemini-2.5-pro",
 ];
 
 const foodItemSchema = {
@@ -65,10 +64,9 @@ function getGenAI(): GoogleGenAI {
 }
 
 async function generateWithFallback(ai: GoogleGenAI, contents: any) {
-  let lastError: any = null;
+  const failures: string[] = [];
 
-  for (let i = 0; i < FALLBACK_MODELS.length; i++) {
-    const model = FALLBACK_MODELS[i];
+  for (const model of FALLBACK_MODELS) {
     try {
       const response = await ai.models.generateContent({
         model,
@@ -82,14 +80,20 @@ async function generateWithFallback(ai: GoogleGenAI, contents: any) {
       if (response && response.text) {
         return response;
       }
+      failures.push(`${model}: empty response`);
     } catch (err: any) {
-      lastError = err;
-      const errMsg = err.message || JSON.stringify(err);
-      console.warn(`Model ${model} failed, trying fallback to next model... Error: ${errMsg}`);
+      const status = err?.status ?? err?.code;
+      const msg = err?.message || JSON.stringify(err);
+      failures.push(`${model}: [${status ?? "n/a"}] ${msg}`);
+      console.warn(`Model ${model} failed, trying next. [${status ?? "n/a"}] ${msg}`);
+      // Credential problems affect every model, so there is no point falling back.
+      if (status === 401 || status === 403) break;
     }
   }
 
-  throw lastError || new Error("All AI models are currently experiencing high demand. Please try again.");
+  // Keep the per-model reasons in server logs only; never surface provider internals to the client.
+  console.error("All Gemini models failed:", failures);
+  throw new Error("The AI service is temporarily unavailable. Please try again shortly.");
 }
 
 export function validateDishName(name: unknown): string {

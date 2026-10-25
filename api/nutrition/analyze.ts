@@ -4,14 +4,12 @@ import crypto from 'crypto';
 
 const DEFAULT_FIREBASE_PROJECT_ID = 'calorieapp-caca8';
 
-// Tiered model pool: starts with Gemini 3.8 Flash, backed by Gemini 2.5 Pro for deep reasoning,
-// and high-availability fallbacks for 99% accuracy & 99.9% uptime.
+// Tiered model pool: current Flash first, then older stable models as availability fallbacks.
 const FALLBACK_MODELS = [
   'gemini-3.8-flash',
-  'gemini-2.5-pro',
-  'gemini-3.7-flash',
+  'gemini-3.6-flash',
   'gemini-2.5-flash',
-  'gemini-2.0-flash',
+  'gemini-2.5-pro',
 ];
 
 let cachedCertificates: Record<string, string> | null = null;
@@ -159,10 +157,9 @@ const nutritionalInfoSchema = {
 };
 
 async function generateWithFallback(ai: GoogleGenAI, contents: any) {
-  let lastError: any = null;
+  const failures: string[] = [];
 
-  for (let i = 0; i < FALLBACK_MODELS.length; i++) {
-    const model = FALLBACK_MODELS[i];
+  for (const model of FALLBACK_MODELS) {
     try {
       const response = await ai.models.generateContent({
         model,
@@ -176,14 +173,20 @@ async function generateWithFallback(ai: GoogleGenAI, contents: any) {
       if (response && response.text) {
         return response;
       }
+      failures.push(`${model}: empty response`);
     } catch (err: any) {
-      lastError = err;
-      const errMsg = err.message || JSON.stringify(err);
-      console.warn(`Model ${model} failed, attempting fallback to next model... Error: ${errMsg}`);
+      const status = err?.status ?? err?.code;
+      const msg = err?.message || JSON.stringify(err);
+      failures.push(`${model}: [${status ?? 'n/a'}] ${msg}`);
+      console.warn(`Model ${model} failed, trying next. [${status ?? 'n/a'}] ${msg}`);
+      // Credential problems affect every model, so there is no point falling back.
+      if (status === 401 || status === 403) break;
     }
   }
 
-  throw lastError || new Error('All AI models are currently experiencing high demand. Please try again in a few moments.');
+  // Keep the per-model reasons in server logs only; never surface provider internals to the client.
+  console.error('All Gemini models failed:', failures);
+  throw new Error('The AI service is temporarily unavailable. Please try again shortly.');
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -218,6 +221,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!image || typeof image !== 'string') {
       return res.status(400).json({ error: 'Valid image data is required.' });
     }
+    if (image.length > 10 * 1024 * 1024) {
+      return res.status(413).json({ error: 'Image is too large.' });
+    }
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
@@ -227,6 +233,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const ai = new GoogleGenAI({ apiKey });
     const mimeMatch = image.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,/);
     const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'].includes(mimeType)) {
+      return res.status(400).json({ error: 'Unsupported image type.' });
+    }
     const rawData = image.includes(',') ? image.split(',')[1] : image;
 
     const contents = [
